@@ -47,6 +47,25 @@ def run(
     return results
 
 
+def run_law(law_name: str, resolver: LawGoKrResolver, *, deep: bool = False) -> list[Result]:
+    """법령명으로 현행 본문을 직접 가져와 조 단위로 죽은 인용을 분석한다.
+
+    텍스트 붙여넣기의 약점(판례 혼입·표기깨짐·citing_article 미상)을 피하는
+    권장 입력 경로. 각 조문에서 인용을 추출하고 citing_article을 채운다.
+    """
+    arts = resolver.current_articles(law_name)
+    if not arts:
+        raise ValueError(f"현행 법령 「{law_name}」을(를) 찾지 못했습니다(법령명 확인).")
+    results: list[Result] = []
+    for art_key, body in arts.items():
+        for c in parse_citations(body, citing_law=law_name, citing_article=art_key):
+            r = classify(c, resolver.resolve(c.cited_law_name))
+            if deep:
+                r = enrich_result(r, resolver)
+            results.append(r)
+    return results
+
+
 def _run_map(args) -> int:
     """--map 옛법령 조문 후속법령 → 조문 대응 순위 제안(라이브 전용)."""
     oc = args.oc or os.environ.get("LAW_OC")
@@ -78,7 +97,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "input",
         nargs="?",
-        help="법령 본문 텍스트 파일 경로 (- 는 표준입력). --map 모드에선 생략",
+        help="법령 본문 텍스트 파일 경로 (- 는 표준입력). --law/--map 모드에선 생략",
+    )
+    p.add_argument(
+        "--law",
+        metavar="법령명",
+        help="법령명으로 현행 본문을 가져와 조 단위로 분석(권장 입력, 라이브)",
     )
     p.add_argument(
         "--map",
@@ -116,16 +140,24 @@ def main(argv: list[str] | None = None) -> int:
     if args.map:
         return _run_map(args)
 
-    if not args.input:
-        p.error("input 파일이 필요합니다 (또는 --map 모드를 쓰세요)")
-
-    if args.input == "-":
-        text = sys.stdin.read()
+    # --- 법령명 분석 모드(권장) ----------------------------------------- #
+    if args.law:
+        oc = args.oc or os.environ.get("LAW_OC")
+        if not oc:
+            sys.exit("--law 모드는 법제처 API 키(--oc 또는 LAW_OC)가 필요합니다.")
+        try:
+            results = run_law(args.law, LawGoKrResolver(oc), deep=args.deep)
+        except ValueError as e:
+            sys.exit(str(e))
     else:
-        text = Path(args.input).read_text(encoding="utf-8")
-
-    resolver = _build_resolver(args)
-    results = run(text, resolver, citing_law=args.citing_law, deep=args.deep)
+        if not args.input:
+            p.error("input 파일이 필요합니다 (또는 --law / --map 모드를 쓰세요)")
+        if args.input == "-":
+            text = sys.stdin.read()
+        else:
+            text = Path(args.input).read_text(encoding="utf-8")
+        resolver = _build_resolver(args)
+        results = run(text, resolver, citing_law=args.citing_law, deep=args.deep)
 
     if args.format == "csv":
         out = report.to_csv(results)

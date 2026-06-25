@@ -101,6 +101,17 @@ def test_tabeop_repeal_successor_backtrace(resolver):
     assert any("탄소중립" in c for c in info.successor_candidates)
 
 
+def test_run_law_fills_citing_article(resolver):
+    # 법령명 분석: 공유수면법 본문에서 §13의 국가균형발전법 인용을 잡고 죽은 참조로 분류
+    from lawdangle import run_law
+
+    results = run_law("공유수면 관리 및 매립에 관한 법률", resolver)
+    assert results, "인용이 추출되어야 함"
+    dead = [r for r in results if r.category and "국가균형발전" in r.citation.cited_law_name]
+    assert dead, "국가균형발전 특별법 죽은 인용이 잡혀야 함"
+    assert dead[0].citation.citing_article  # 인용하는 조(citing_article) 채워짐
+
+
 def test_unknown_law(resolver):
     info = resolver.resolve("존재하지않는가짜법령명1234")
     assert info.status == LawStatus.UNKNOWN

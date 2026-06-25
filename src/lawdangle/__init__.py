@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from .classifier import classify
+from .cli import run, run_law
 from .mapper import MappingSuggestion, rank_correspondence, suggest_mapping
 from .models import (
     Category,
@@ -29,6 +30,8 @@ __all__ = [
     "LawStatus",
     "Result",
     "classify",
+    "run",
+    "run_law",
     "parse_citations",
     "Resolver",
     "FixtureResolver",

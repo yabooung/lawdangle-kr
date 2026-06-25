@@ -59,13 +59,17 @@ Python 3.10+ 필요. 라이브 조회에는 무료 **법제처 OPEN API** 인증
 ## 빠른 시작
 
 ```bash
+# 권장 — 법령명으로 그 법의 현행 본문을 직접 가져와 분석.
+# 붙여넣기 불필요 + 판례 혼입 없음 + 인용하는 조(citing_article)까지 채워짐.
+LAW_OC=your_oc lawdangle --law "공유수면 관리 및 매립에 관한 법률" --format csv
+
+# 텍스트 파일 분석
+LAW_OC=your_oc lawdangle path/to/law.txt --format summary
+
 # 오프라인 데모 (연혁 fixture — API 키 불필요)
 lawdangle examples/sample_corpus.txt \
     --fixture test/fixtures/gongyusumyeon.json test/fixtures/deunggi.json \
     --format csv
-
-# 법제처 OPEN API 라이브 조회
-LAW_OC=your_oc lawdangle path/to/law.txt --format summary
 
 # --deep: B·개명+조문이동 건에 구체 대응 조문까지 매핑
 LAW_OC=your_oc lawdangle path/to/law.txt --format csv --deep
@@ -76,14 +80,20 @@ LAW_OC=your_oc lawdangle --map "국가균형발전 특별법" "제17조제2항" 
 ```
 
 ```python
-from lawdangle import parse_citations, classify
+from lawdangle import run_law
 from lawdangle.resolver import LawGoKrResolver
 
-resolver = LawGoKrResolver("your_oc")          # 오프라인은 FixtureResolver
-text = open("law.txt", encoding="utf-8").read()
-for c in parse_citations(text):
-    result = classify(c, resolver.resolve(c.cited_law_name))
-    print(result.category, result.note)
+resolver = LawGoKrResolver("your_oc")
+for r in run_law("공유수면 관리 및 매립에 관한 법률", resolver):
+    if r.category:                              # 현행/정상 인용은 건너뜀
+        print(r.citation.citing_article, r.citation.cited_law_name,
+              r.citation.cited_article, "→", r.category.name, "|", r.note)
+
+# 인용 단위로 직접 다룰 수도 있다:
+from lawdangle import parse_citations, classify
+for c in parse_citations(open("law.txt", encoding="utf-8").read()):
+    res = classify(c, resolver.resolve(c.cited_law_name))
+    print(res.category, res.note)
 ```
 
 ## 파이프라인
