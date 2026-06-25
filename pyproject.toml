@@ -24,5 +24,17 @@ Homepage = "https://github.com/yabooung/lawdangle-kr"
 [tool.hatch.build.targets.wheel]
 packages = ["src/lawdangle"]   # src 레이아웃 → import명 lawdangle
 
+[tool.hatch.build.targets.sdist]
+include = [
+    "src",
+    "test",
+    "examples",
+    "README.md",
+    "README.ko.md",
+    "DESIGN.md",
+    "LICENSE",
+    "pyproject.toml",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["test"]
