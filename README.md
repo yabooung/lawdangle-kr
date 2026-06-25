@@ -59,13 +59,17 @@ Requires Python 3.10+. Live lookups need a free **법제처(MOLEG) OPEN API** ke
 ## Quick start
 
 ```bash
+# RECOMMENDED — analyze a whole statute by name (fetches the in-force body itself).
+# No copy-paste, no case-law contamination, and the citing article is filled in.
+LAW_OC=your_oc lawdangle --law "공유수면 관리 및 매립에 관한 법률" --format csv
+
+# Analyze pasted statute text
+LAW_OC=your_oc lawdangle path/to/law.txt --format summary
+
 # Offline demo (history fixtures — no API key needed)
 lawdangle examples/sample_corpus.txt \
     --fixture test/fixtures/gongyusumyeon.json test/fixtures/deunggi.json \
     --format csv
-
-# Live lookup against the MOLEG OPEN API
-LAW_OC=your_oc lawdangle path/to/law.txt --format summary
 
 # --deep: also map the concrete corresponding article for B / rename+moved cases
 LAW_OC=your_oc lawdangle path/to/law.txt --format csv --deep
@@ -76,14 +80,20 @@ LAW_OC=your_oc lawdangle --map "국가균형발전 특별법" "제17조제2항" 
 ```
 
 ```python
-from lawdangle import parse_citations, classify
+from lawdangle import run_law
 from lawdangle.resolver import LawGoKrResolver
 
-resolver = LawGoKrResolver("your_oc")          # or FixtureResolver for offline
-text = open("law.txt", encoding="utf-8").read()
-for c in parse_citations(text):
-    result = classify(c, resolver.resolve(c.cited_law_name))
-    print(result.category, result.note)
+resolver = LawGoKrResolver("your_oc")
+for r in run_law("공유수면 관리 및 매립에 관한 법률", resolver):
+    if r.category:                              # skip live/normal references
+        print(r.citation.citing_article, r.citation.cited_law_name,
+              r.citation.cited_article, "→", r.category.name, "|", r.note)
+
+# Or work at the citation level directly:
+from lawdangle import parse_citations, classify
+for c in parse_citations(open("law.txt", encoding="utf-8").read()):
+    res = classify(c, resolver.resolve(c.cited_law_name))
+    print(res.category, res.note)
 ```
 
 ## Pipeline
