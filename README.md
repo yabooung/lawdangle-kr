@@ -1,127 +1,156 @@
 # lawdangle-kr
 
 > **Dead Cross-Reference Detector for Korean Statutes**
-> 현행 법령이 인용하는 대상 법령의 **폐지·개명·이관·사문화**를 탐지하고 5분류로 태깅한다.
+> Detects and classifies references in in-force Korean laws that point to **repealed, renamed, transferred, or obsolete** target laws.
 
-기존 인용 검증 도구는 "인용된 조문이 **실존하느냐**"까지만 본다.
-이 도구는 "인용된 법령이 **아직 살아있는 좌표를 가리키느냐**"를 본다.
-— 즉, 폐지·개명·이관·사문화된 죽은 참조(*dangling reference*)를 잡는다.
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-| | 검증하는 것 | 예시 |
+**한국어 README → [README.ko.md](README.ko.md)**
+
+---
+
+Existing citation-checkers verify only whether *the citing article itself exists*.
+lawdangle asks a different question: **does the cited law still point at a living coordinate?** — that is, it catches *dangling references* to laws that have been repealed, renamed, transferred, or hollowed out.
+
+| | Checks | Example |
 |---|---|---|
-| 실존 검증 | 인용하는 **쪽** 조문이 진짜냐 | "형법 제9999조" → 없음 |
-| **이 도구 (liveness)** | 인용당하는 **대상**이 폐지/개명/이관됐냐 | "「국가균형발전 특별법」 제17조제2항" → 폐지·이관됨 |
+| Existence check | Whether the **citing** article is real | "Criminal Act art. 9999" → does not exist |
+| **lawdangle (liveness)** | Whether the **cited target** was repealed / renamed / transferred | "「National Balanced Development Special Act」 art. 17(2)" → repealed & transferred |
 
-방향이 반대다. 전자는 텍스트 안의 가짜를 잡고, 후자는 텍스트 안의 죽은 참조를 잡는다.
+The direction is reversed: the former catches fakes inside the text; the latter catches dead references inside the text.
 
-## 5분류
+> **The core trap:** naive string-replacement of law names produces *mis-corrections* in split-transfer and article-renumbering cases — sending a wrong reference somewhere *more* wrong. lawdangle therefore **detects and proposes**, but never auto-applies corrections.
 
-| 코드 | 유형 | 작동 | 정비 방법 | 심각성 |
+## The five categories
+
+| Code | Type | Works? | Remedy | Severity |
 |---|---|---|---|---|
-| **A** | 단순 개명 | O | 법명만 교체 | 5 (낮음) |
-| **B** | 전부개정·이관 (조문 대응) | O | 법명+조문 교체 | 4 |
-| **C** | 분할 승계 (1:N) | O | 호 단위 수동 매핑 | 2 |
-| **D** | 사문화 (전제 소멸) | 보통 작동 | 인용부 삭제·재구성 | 3 |
-| **E** | 순수 폐지 (빈 참조) | X 가능 | 입법 보완 | 1 (최상) |
+| **A** | Simple rename | Yes | Replace name only | 5 (low) |
+| **B** | Full amendment / transfer (article mapped) | Yes | Replace name + article | 4 |
+| **C** | Split succession (1 → N) | Yes | Manual item-level mapping | 2 (high) |
+| **D** | Obsolete (premise dissolved) | Usually self-contained | Delete / restructure the citation | 3 |
+| **E** | Pure repeal (empty reference) | May break | Legislative fix | 1 (highest) |
 
-심각성 순위: **E > C > D > B > A**. C/D/E는 자동 단정하지 않고 **수동 확인 플래그**를 단다 — 이것이 이 도구의 신뢰도 핵심.
+Severity ranking (remediation priority): **E > C > D > B > A**.
+**C / D / E are never auto-asserted** — they are flagged for human review with evidence attached. This restraint is the heart of the tool's reliability.
 
-### 자동 판정 범위 (라이브 API 기준)
+### Automatic classification scope (live API)
 
-| 판정 | 방식 | 신뢰도 |
+| Verdict | How | Confidence |
 |---|---|---|
-| 현행 / 폐지 | `target=law`·`eflaw` 조회 | 자동 (높음) |
-| **A 개명** | **법령ID 연속성**(옛이름 없음 + 같은 ID가 현행에 다른 이름) + **인용 조문 생존 검증** | 자동 (높음) |
-| B 개명+조문이동 | 개명이지만 인용 조문이 현행본에서 삭제/재번호 → `--map` 권고 | 자동 후보 (중간) |
-| B 이관 / C 분할 | 폐지 + 후속법 후보(제개정이유 추출) → 조문대응 수동 | 수동 플래그 + 후보 제공 |
-| D 사문화 / E 폐지 | 폐지 + 흡수신호(일반회계)/후보 | 수동 플래그 |
-| 약칭 인용 | **공식 약칭사전(lsAbrv 2,600여건)** 으로 풀네임 해소 → A | 자동 (높음) |
-| 부분명(앞부분 생략) 인용 | 부분일치(official.endswith) 보수 매칭 → A | 자동 (중간) |
-| 비공식 약칭(화관법 등) | 정확매칭 실패 → UNKNOWN(오매칭 회피) | — |
+| In-force / Repealed | `target=law` · `eflaw` lookup | Auto (high) |
+| **A — Rename** | **Law-ID continuity** (old name absent, same ID alive under a new name) + **cited-article survival check** | Auto (high) |
+| **A — Official abbreviation** | Official abbreviation dictionary (`lsAbrv`, ~2,600 entries) → full name | Auto (high) |
+| **A — Truncated name** | Conservative `endswith` partial match → full name | Auto (medium) |
+| B — Rename + article moved | Renamed, but the cited article is deleted/renumbered in the current text → suggests `--map` | Auto candidate (medium) |
+| B — Transfer / C — Split | Repeal + successor candidates (addendum back-trace + amendment-reason) → article mapping is manual | Flag + candidates |
+| D — Obsolete / E — Repeal | Repeal + absorption signal (general account) / no successor | Flag |
+| Informal abbreviation (not in dictionary) | Exact match fails → UNKNOWN (mis-match avoided on purpose) | — |
 
-## 검증된 실증 2케이스 (회귀 고정값)
-
-| 입력 | 인용 | 정답 |
-|---|---|---|
-| 공유수면법 §13①14 | 「국가균형발전 특별법」 §17② | **B** (「지역 산업위기 대응 및 지역경제 회복을 위한 특별법」으로 이관) |
-| 등기특별회계법 §3 | 「국유재산관리특별회계법」 §6 | **D** (특별회계 폐지·일반회계 흡수, 자체 각 호로 작동) |
-
-## 설치
+## Install
 
 ```bash
 pip install lawdangle-kr
 ```
 
-## 실행
+Requires Python 3.10+. Live lookups need a free **법제처(MOLEG) OPEN API** key (OC), issued at <https://open.law.go.kr>.
+
+## Quick start
 
 ```bash
-# 오프라인(연혁 fixture)으로 데모
+# Offline demo (history fixtures — no API key needed)
 lawdangle examples/sample_corpus.txt \
     --fixture test/fixtures/gongyusumyeon.json test/fixtures/deunggi.json \
     --format csv
 
-# 법제처 OPEN API 라이브 조회 (OC = open.law.go.kr 발급 인증키)
-LAW_OC=your_id lawdangle path/to/law.txt --format summary
+# Live lookup against the MOLEG OPEN API
+LAW_OC=your_oc lawdangle path/to/law.txt --format summary
 
-# --deep: B·개명+조문이동 건에 구체 대응 조문까지 매핑(느림)
-LAW_OC=your_id lawdangle path/to/law.txt --format csv --deep
+# --deep: also map the concrete corresponding article for B / rename+moved cases
+LAW_OC=your_oc lawdangle path/to/law.txt --format csv --deep
+
+# Article-correspondence helper (old article → successor article)
+LAW_OC=your_oc lawdangle --map "국가균형발전 특별법" "제17조제2항" \
+    "지역 산업위기 대응 및 지역경제 회복을 위한 특별법"
 ```
 
 ```python
 from lawdangle import parse_citations, classify
-from lawdangle.resolver import FixtureResolver
+from lawdangle.resolver import LawGoKrResolver
 
-resolver = FixtureResolver.from_files("test/fixtures/gongyusumyeon.json")
-for c in parse_citations(open("examples/sample_corpus.txt", encoding="utf-8").read()):
-    print(classify(c, resolver.resolve(c.cited_law_name)).note)
+resolver = LawGoKrResolver("your_oc")          # or FixtureResolver for offline
+text = open("law.txt", encoding="utf-8").read()
+for c in parse_citations(text):
+    result = classify(c, resolver.resolve(c.cited_law_name))
+    print(result.category, result.note)
 ```
 
-## 파이프라인
+## Pipeline
 
 ```
-[법령 텍스트] → ① Parser(인용추출) → ② Resolver(법제처 API 연혁) → ③ Classifier(5분류) → ④ Reporter(CSV/JSON)
+[statute text]
+   ① Parser     extract 「law」 + article citations
+   ② Resolver   MOLEG API — current status, rename, successors (cached)
+   ③ Classifier 5-way decision tree (+ confidence, manual flag)
+   ④ Reporter   CSV / JSON / summary
 ```
 
-## 후속법 자동 추출 (라이브)
+## How successor detection works (live)
 
-검색 API에는 후속·대체법이 필드로 없지만, **폐지법률 상세(`lawService.do`)** 에 단서가 있다. resolver가 두 경로로 후속법을 역추적한다:
+The search API has no "successor law" field, but the **repealed-law detail** (`lawService.do`) does. lawdangle back-traces successors via two routes:
 
-- **타법폐지 역추적** — 타법폐지본의 부칙 헤더 `부칙(폐지시킨 법명) … 「self」은 폐지한다` 에서 **폐지시킨 법 = 후속법**을 직접 추출. (예: 저탄소 녹색성장 기본법 → 「기후위기 대응을 위한 탄소중립ㆍ녹색성장 기본법」, 국토이용관리법 → 「국토의 계획 및 이용에 관한 법률」)
-- **제개정이유 산문** — 이유서의 「후속법」 추출 (부칙 '다른 법률의 개정'은 부수개정이라 제외, 법명형 꼬리말만).
-- `absorbed` — "…일반회계로 통합" 같은 회계 흡수 신호 → 후속'법' 없음 = **D 강신호**.
+- **Repeal-by-other-law back-trace** — when a law was repealed by another law's *addendum* (`타법폐지`), the addendum header `Addendum(<the repealing law>) … repeals 「self」` names the **repealing law = the successor**.
+  *e.g.* 저탄소 녹색성장 기본법 → 「기후위기 대응을 위한 탄소중립ㆍ녹색성장 기본법」; 국토이용관리법 → 「국토의 계획 및 이용에 관한 법률」.
+- **Amendment-reason prose** — extracts 「successor law」 names from the enactment/amendment reason (filtering out the addendum's "amendments to other laws", which are collateral, and keeping only law-shaped names).
+- **Absorption signal** (`absorbed`) — phrases like "…merged into the general account" mean *no successor law* → a strong **D** signal.
 
-후보 개수로 분류: **1개 → B(이관)**, **2개+ → C(분할)**, 0개+흡수 → D. 모두 수동 플래그.
+Candidate count drives the class: **1 → B (transfer)**, **2+ → C (split)**, **0 + absorption → D**. All are flagged for manual confirmation, because an extracted candidate is the *law's general successor*, which may differ from the *specific provision's* successor (the split-transfer trap).
 
-단, 추출된 후보는 *법 전체의 일반 승계자*라 **특정 조항의 승계자와 다를 수 있다**(분할 이관 함정). 그래서 후보는 `successor_suggestion`으로만 내고 조문 대응은 **수동 확인**으로 남긴다 — C/D/E 자동 단정 금지(§3③).
+## Article correspondence (`--map`, `--deep`)
 
-## 조문 대응 반자동 매핑 (`--map`)
+For transfers (B), `--map` narrows "old §17(2) → which successor article?". It walks the old law's history to find the **last substantive text before deletion** (a cited article may have been deleted *before* the law itself was repealed), then ranks the successor's current articles by **text similarity**. When the citation has a paragraph (②), it further narrows **down to the paragraph** inside the top article (item-level stays manual — that is category C).
 
-폐지·이관(B)에서 "옛 §17② → 후속법 어느 조문?"을 좁혀준다. 옛 법 연혁을 거슬러 **삭제 전 실본문**을 찾고(조문이 폐지 전 이미 삭제된 경우 대비), 후속법 현행 조문과 **본문 유사도**로 순위를 매긴다. 인용에 항(②)이 있으면 최상위 후속 조 안에서 **항 단위까지** 좁힌다(호 단위는 설계상 수동 — C).
-
-```bash
-lawdangle --map "국가균형발전 특별법" "제17조제2항" "지역 산업위기 대응 및 지역경제 회복을 위한 특별법"
 ```
-```
-옛 법령 : 「국가균형발전 특별법」 제17조  (실본문 20220113 시행본)
+$ lawdangle --map "국가균형발전 특별법" "제17조제2항" "지역 산업위기 대응 및 지역경제 회복을 위한 특별법"
+
+옛 법령 : 「국가균형발전 특별법」 제17조  (substantive text from the 2022-01-13 version)
 후속법령: 「지역 산업위기 대응 및 지역경제 회복을 위한 특별법」
-판정    : 수동확인 — 복수 후보 경합(분할 승계 가능) (항 정밀화: 제1항 유사도 0.205)
-후보(유사도순):
-  1. 제10조제1항  (유사도 0.18)  …산업위기대응특별지역의 지정 신청을 받은 경우…
-  2. 제12조       (유사도 0.176) …
-  3. 제9조        (유사도 0.172) …
+판정    : manual — multiple close candidates (possible split) (paragraph: §1, sim 0.205)
+후보(by similarity):
+  1. 제10조제1항  (0.18)   ① the Minister … upon receiving a designation application …
+  2. 제12조       (0.176)  …
+  3. 제9조        (0.172)  …
 ```
-→ DESIGN의 정답 **§17②→§10**을 #1 후보(제10조제1항)로 제시. 동시에 §9·§10·§12가 근소 경합이라 **자동 확정하지 않고**(분할 승계 가능) 사람의 최종 대조로 넘긴다. 이것이 "틀린 곳을 더 틀린 곳으로 보내는 오정정"(§1)을 피하는 방식이다.
 
-## 스코프 경계
+It surfaces the design's known answer **§17(2) → art. 10** as the #1 candidate (제10조제1항), while *not* auto-confirming (arts. 9/10/12 are close — possible split) and leaving the final call to a human. That is precisely how the "mis-correction" trap is avoided.
 
-- 이 도구는 **탐지·분류**까지. 자동 정정(법명 치환)은 기본 제공하지 않는다 — 정정은 "제안(suggestion)"으로만, 적용은 사람이.
-- "폐지=흠결"로 단정하지 않는다. D도 B도 작동한다. 효력 마비는 E(+일부 D)뿐.
+## Validated cases (regression fixtures)
 
-## 개발
+| Input | Citation | Answer |
+|---|---|---|
+| 공유수면법 §13①14 | 「국가균형발전 특별법」 §17② | **B** — institution transferred to 「지역 산업위기 대응 및 지역경제 회복을 위한 특별법」 |
+| 등기특별회계법 §3 | 「국유재산관리특별회계법」 §6 | **D** — special account abolished & absorbed into the general account; the citing article still works on its own |
+
+These two are pinned in `test/fixtures/`; if the output is not B / D, the regression fails.
+
+## Scope (what it deliberately does *not* do)
+
+- It **detects and classifies** only. Automatic name-substitution is not a default — corrections are emitted as *suggestions*; a human applies them. (Auto-substitution causes mis-corrections in B/C cases.)
+- It does **not** equate "repealed" with "defective". D works, B works; only E (and some D) actually breaks enforceability. The report keeps this tone so its findings hold up.
+- Informal abbreviations not in the official dictionary resolve to UNKNOWN rather than risk a wrong match.
+
+## Development
 
 ```bash
 pip install -e ".[dev]"
-pytest
+pytest                     # offline tests run anywhere; live API tests run only when an OC key is present
 ```
 
-자세한 설계는 [DESIGN.md](DESIGN.md) 참조.
+Live tests read the OC key from `LAW_OC` or a local `.env` (`oc=...`); without it they are skipped.
+
+See [DESIGN.md](DESIGN.md) for the full design rationale.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
