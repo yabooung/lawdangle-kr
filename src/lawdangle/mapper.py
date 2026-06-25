@@ -188,38 +188,99 @@ def suggest_mapping(
     )
 
 
-def enrich_result(result: Result, resolver: LawGoKrResolver) -> Result:
-    """분류 결과에 구체 대응 조문 제안을 덧붙인다(조문 단위 디테일).
+def _norm_name(s: str) -> str:
+    return s.replace("ㆍ", "").replace("·", "").replace(" ", "").strip()
 
-    대상: B(개명+조문이동), 또는 후속법 후보가 '법명 하나'로 좁혀지는 폐지 건.
-    A(깨끗한 개명)·후보 다수(C)·후보 없음(D/E)은 매핑하지 않는다(과잉 단정 방지).
+
+def discover_successors(
+    resolver: LawGoKrResolver,
+    old_article_text: str,
+    *,
+    exclude: tuple[str, ...] = (),
+    max_terms: int = 8,
+    max_per_term: int = 6,
+) -> list[str]:
+    """옛 조문 본문의 특징 개념어로 현행 법령명을 검색해 후속법 후보를 발견한다.
+
+    분할 이관처럼 '법 전체의 일반 승계자'가 아닌 **그 조항의 실제 후속법**을 찾는다.
+    예) 「국가균형발전 특별법」§17 본문의 '산업위기대응특별지역' →
+        「지역 산업위기 대응 및 지역경제 회복을 위한 특별법」.
+
+    핵심 휴리스틱: 긴 복합명사(제도명)일수록, 그 이름으로 법령명을 쳤을 때
+    결과가 적을수록(=그 제도를 '정의'하는 법) 점수가 높다.
+    """
+    ex = {_norm_name(e) for e in exclude}
+    terms = sorted(
+        {t for t in tokenize(old_article_text) if len(t) >= 5},
+        key=len, reverse=True,
+    )[:max_terms]
+    scores: dict[str, float] = {}
+    for term in terms:
+        laws = [l for l in resolver.find_current_laws(term) if _norm_name(l) not in ex]
+        if not laws or len(laws) > max_per_term:
+            continue  # 너무 흔한 단어(=인용만 한 법 다수) → 버림
+        for law in laws:
+            scores[law] = scores.get(law, 0.0) + len(term) / len(laws)
+    return sorted(scores, key=lambda k: scores[k], reverse=True)
+
+
+def suggest_mapping_auto(
+    resolver: LawGoKrResolver,
+    old_law: str,
+    old_article: str,
+    *,
+    candidate_laws: int = 3,
+    top_k: int = 3,
+) -> MappingSuggestion | None:
+    """후속법을 모를 때: 본문 기반으로 후속법을 발견한 뒤 조문 대응까지 제안.
+
+    옛 조문 본문 → 개념어로 현행법 발견 → 각 후보법에 매핑 → 최고 유사도 선택.
+    """
+    m = re.match(r"(제\d+조(?:의\d+)?)", old_article)
+    art_key = m.group(1) if m else old_article
+    hm = re.search(r"제(\d+)항", old_article)
+    hang = int(hm.group(1)) if hm else None
+
+    ver, old_text, _ = find_old_article_detailed(resolver, old_law, art_key, hang)
+    if not old_text:
+        return None
+
+    succ_laws = discover_successors(resolver, old_text, exclude=(old_law,))
+    best: MappingSuggestion | None = None
+    for law in succ_laws[:candidate_laws]:
+        s = suggest_mapping(resolver, old_law, old_article, law, top_k=top_k)
+        if s.best and (best is None or (best.best and s.best.score > best.best.score)):
+            best = s
+    return best
+
+
+def enrich_result(result: Result, resolver: LawGoKrResolver) -> Result:
+    """분류 결과에 '후속법 + 구체 대응 조문' 제안을 덧붙인다(조문 단위 디테일).
+
+    - 개명+조문이동(B): 같은 개명법 안에서 조문 매핑.
+    - 이관(B)·분할(C): **본문 기반 후속법 자동 발견** + 조문 매핑(분할 이관도 자동).
+    - A(깨끗한 개명)·D(흡수)·E·정상: 매핑 안 함(과잉 단정 방지).
     successor_suggestion / note 를 갱신해 반환(원본 객체 수정).
     """
     c = result.citation
     if not c.cited_article or result.category is None:
         return result
 
-    old_law = c.cited_law_name
-    target: str | None = None
-
+    s: MappingSuggestion | None = None
     if result.history.status == LawStatus.RENAMED and result.category == Category.B:
-        # 같은(개명된) 법 안에서 조문이 이동/재번호 → 현행본을 대상으로 매핑.
-        target = result.history.current_name
-    elif result.category in (Category.B, Category.D):
-        # 폐지+후속법 후보가 정확히 하나일 때만(분할 C는 손대지 않음).
-        cands = result.history.successor_candidates
-        if len(cands) == 1:
-            target = cands[0]
+        # 개명법 안에서 조문이 이동/재번호 → 현행 개명본을 대상으로 매핑.
+        if result.history.current_name:
+            s = suggest_mapping(resolver, c.cited_law_name, c.cited_article,
+                                result.history.current_name)
+    elif result.category in (Category.B, Category.C):
+        # 이관·분할 → 후속법을 본문으로 자동 발견한 뒤 매핑(분할 이관 자동 처리).
+        s = suggest_mapping_auto(resolver, c.cited_law_name, c.cited_article)
 
-    if not target:
-        return result
-
-    s = suggest_mapping(resolver, old_law, c.cited_article, target)
-    if s.best:
+    if s and s.best:
         tag = "유력" if s.confident else "후보"
-        result.successor_suggestion = f"{target} {s.best.article}"
+        result.successor_suggestion = f"{s.successor_law} {s.best.article}"
         result.note += (
-            f" | 조문제안({tag}): 「{target}」 {s.best.article}"
+            f" | 조문제안({tag}): 「{s.successor_law}」 {s.best.article}"
             f"(유사도 {s.best.score})"
         )
     return result

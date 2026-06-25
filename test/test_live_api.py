@@ -112,6 +112,16 @@ def test_run_law_fills_citing_article(resolver):
     assert dead[0].citation.citing_article  # 인용하는 조(citing_article) 채워짐
 
 
+def test_auto_discover_split_successor(resolver):
+    # 분할 이관 자동 발견: §17② 후속법을 안 알려줘도 본문으로 「지역 산업위기…법」 발견
+    from lawdangle.mapper import suggest_mapping_auto
+
+    s = suggest_mapping_auto(resolver, "국가균형발전 특별법", "제17조제2항")
+    assert s is not None
+    assert "산업위기" in s.successor_law            # 조항의 실제 후속법 자동 발견
+    assert any(c.article.startswith("제10조") for c in s.candidates)  # §10 대응
+
+
 def test_unknown_law(resolver):
     info = resolver.resolve("존재하지않는가짜법령명1234")
     assert info.status == LawStatus.UNKNOWN

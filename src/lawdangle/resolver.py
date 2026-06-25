@@ -497,6 +497,22 @@ class LawGoKrResolver:
         mst = _mst_of(_latest(cur))
         return self.articles_detailed(mst) if mst else {}
 
+    def find_current_laws(self, query: str) -> list[str]:
+        """법령명 부분검색 → 현행 '법률'명 리스트(시행령·시행규칙 제외, 중복 제거).
+
+        분할 이관 후속법 발견(content discovery)에 쓴다.
+        """
+        out: list[str] = []
+        for r in _as_rows(self._search("law", query)):
+            if (r.get("현행연혁코드") or "").strip() != "현행":
+                continue
+            nm = r.get("법령명한글", "")
+            if not nm or nm.endswith(("시행령", "시행규칙")):
+                continue
+            if nm not in out:
+                out.append(nm)
+        return out
+
     def _search(self, target: str, query: str) -> dict:
         return self._get("lawSearch", {"target": target, "query": query})
 
