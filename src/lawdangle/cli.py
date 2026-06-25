@@ -13,7 +13,7 @@ from pathlib import Path
 
 from . import report
 from .classifier import classify
-from .mapper import enrich_result, suggest_mapping
+from .mapper import enrich_result, suggest_mapping, suggest_mapping_auto
 from .parser import parse_citations
 from .resolver import FixtureResolver, LawGoKrResolver, Resolver
 from .models import Result
@@ -67,18 +67,33 @@ def run_law(law_name: str, resolver: LawGoKrResolver, *, deep: bool = False) -> 
 
 
 def _run_map(args) -> int:
-    """--map 옛법령 조문 후속법령 → 조문 대응 순위 제안(라이브 전용)."""
+    """--map: '옛법령 조문 [후속법령]' → 조문 대응 순위 제안(라이브 전용).
+
+    후속법령 생략 시 본문 기반으로 후속법을 자동 발견(분할 이관 포함).
+    """
     oc = args.oc or os.environ.get("LAW_OC")
     if not oc:
         sys.exit("조문 대응 제안은 법제처 API 키(--oc 또는 LAW_OC)가 필요합니다.")
-    old_law, article, successor = args.map
-    s = suggest_mapping(LawGoKrResolver(oc), old_law, article, successor)
+    if len(args.map) not in (2, 3):
+        sys.exit("--map 는 '옛법령 조문' 또는 '옛법령 조문 후속법령' 형식입니다.")
+    resolver = LawGoKrResolver(oc)
+
+    if len(args.map) == 3:
+        old_law, article, successor = args.map
+        s = suggest_mapping(resolver, old_law, article, successor)
+    else:
+        old_law, article = args.map
+        print("후속법 자동 발견 중… (본문 기반)")
+        s = suggest_mapping_auto(resolver, old_law, article)
+        if s is None:
+            print(f"옛 법 「{old_law}」 {article}의 후속법을 찾지 못했습니다.")
+            return 0
 
     print(f"옛 법령 : 「{s.old_law}」 {s.old_article}"
           + (f"  (실본문 {s.old_article_version} 시행본)" if s.old_article_version else ""))
     if s.old_snippet:
         print(f"옛 조문 : {s.old_snippet}…")
-    print(f"후속법령: 「{s.successor_law}」")
+    print(f"후속법령: 「{s.successor_law}」" + (" (자동발견)" if len(args.map) == 2 else ""))
     print(f"판정    : {'유력' if s.confident else '수동확인'} — {s.note}")
     if s.candidates:
         print("후보(유사도순):")
@@ -106,9 +121,9 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument(
         "--map",
-        nargs=3,
-        metavar=("옛법령", "조문", "후속법령"),
-        help="조문 대응 제안: 옛(폐지) 법의 조문이 후속법 어느 조문에 대응하는지 순위 제시",
+        nargs="+",
+        metavar="옛법령 조문 [후속법령]",
+        help="조문 대응 제안: '옛법령 조문' (후속법 자동발견) 또는 '옛법령 조문 후속법령' (직접 지정)",
     )
     p.add_argument("--citing-law", default="", help="인용하는 쪽 법령명(리포트용)")
     p.add_argument("--oc", help="법제처 OPEN API 인증키(OC). 없으면 LAW_OC 환경변수")

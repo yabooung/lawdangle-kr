@@ -32,6 +32,37 @@ def test_rank_picks_most_similar():
     assert ranked[0].score >= ranked[-1].score
 
 
+class _FakeResolver:
+    """find_current_laws만 흉내내는 오프라인 가짜 resolver(법제처처럼 부분일치)."""
+    def __init__(self, mapping):
+        self.mapping = mapping  # 개념어 -> 법령명 리스트
+    def find_current_laws(self, q):
+        out = []
+        for concept, laws in self.mapping.items():
+            if concept in q:           # 실 API의 부분일치 흉내(토큰에 조사 붙어도 매칭)
+                out.extend(laws)
+        return list(dict.fromkeys(out))
+
+
+def test_discover_successors_prefers_specific_term():
+    from lawdangle.mapper import discover_successors
+    fake = _FakeResolver({
+        "산업위기대응특별지역": ["지역 산업위기 대응 및 지역경제 회복을 위한 특별법"],
+        "관할행정구역으로": ["법1", "법2", "법3", "법4", "법5", "법6", "법7"],  # 너무 흔함 → 버림
+    })
+    text = "시도지사는 관할행정구역으로 산업위기대응특별지역으로 지정"
+    out = discover_successors(fake, text, exclude=())
+    assert out[0] == "지역 산업위기 대응 및 지역경제 회복을 위한 특별법"
+    assert "법1" not in out  # max_per_term 초과 → 제외
+
+
+def test_discover_successors_excludes_self():
+    from lawdangle.mapper import discover_successors
+    fake = _FakeResolver({"산업위기대응특별지역": ["옛법령명", "지역 산업위기 특별법"]})
+    out = discover_successors(fake, "산업위기대응특별지역 지정", exclude=("옛법령명",))
+    assert "옛법령명" not in out
+
+
 def test_hang_num_parsing():
     assert hang_num("②") == 2
     assert hang_num("⑭") == 14

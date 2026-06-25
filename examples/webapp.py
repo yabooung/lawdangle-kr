@@ -19,7 +19,9 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from lawdangle.classifier import classify           # noqa: E402
 from lawdangle.cli import run_law                    # noqa: E402
-from lawdangle.mapper import enrich_result, suggest_mapping  # noqa: E402
+from lawdangle.mapper import (  # noqa: E402
+    enrich_result, suggest_mapping, suggest_mapping_auto,
+)
 from lawdangle.parser import parse_citations         # noqa: E402
 from lawdangle.resolver import LawGoKrResolver        # noqa: E402
 
@@ -103,7 +105,7 @@ code{background:#0c0e12;padding:1px 6px;border-radius:5px;font-size:12px}
     <input id="m_art" placeholder="조문 — 예: 제17조제2항" style="max-width:180px">
   </div>
   <div class="row">
-    <input id="m_succ" placeholder="후속법령명 — 예: 지역 산업위기 대응 및 지역경제 회복을 위한 특별법">
+    <input id="m_succ" placeholder="후속법령명 (비우면 본문 기반 자동 발견 — 분할 이관도 OK)">
     <button id="mrun" onclick="domap()">매핑</button>
   </div>
   <div id="mout"></div>
@@ -174,7 +176,7 @@ async function analyze(){
 async function domap(){
   const btn=document.getElementById('mrun'), out=document.getElementById('mout');
   const old=document.getElementById('m_old').value, art=document.getElementById('m_art').value, succ=document.getElementById('m_succ').value;
-  if(!old||!art||!succ){out.innerHTML='<p class="err">세 칸을 모두 입력하세요.</p>';return}
+  if(!old||!art){out.innerHTML='<p class="err">옛 법령명과 조문은 필수입니다(후속법은 비우면 자동 발견).</p>';return}
   btn.disabled=true; out.innerHTML='<p class="mut">매핑 중… (연혁 walk + 유사도)</p>';
   try{
     const r=await fetch('/api/map',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -262,7 +264,14 @@ class Handler(BaseHTTPRequestHandler):
                     {"results": [_row(r) for r in results], "summary": _summary(results)},
                     ensure_ascii=False))
             elif self.path == "/api/map":
-                s = suggest_mapping(RESOLVER, body["old_law"], body["article"], body["successor"])
+                succ = (body.get("successor") or "").strip()
+                if succ:
+                    s = suggest_mapping(RESOLVER, body["old_law"], body["article"], succ)
+                else:
+                    s = suggest_mapping_auto(RESOLVER, body["old_law"], body["article"])
+                if s is None:
+                    self._send(200, json.dumps({"error": "후속법을 자동 발견하지 못했습니다(직접 입력해 보세요)."}, ensure_ascii=False))
+                    return
                 self._send(200, json.dumps({
                     "old_article": s.old_article, "version": s.old_article_version,
                     "old_snippet": s.old_snippet, "successor_law": s.successor_law,

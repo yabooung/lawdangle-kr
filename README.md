@@ -75,6 +75,9 @@ lawdangle examples/sample_corpus.txt \
 LAW_OC=your_oc lawdangle path/to/law.txt --format csv --deep
 
 # Article-correspondence helper (old article → successor article)
+# Successor auto-discovered when omitted (works for split transfers too):
+LAW_OC=your_oc lawdangle --map "국가균형발전 특별법" "제17조제2항"
+# ...or specify the successor explicitly:
 LAW_OC=your_oc lawdangle --map "국가균형발전 특별법" "제17조제2항" \
     "지역 산업위기 대응 및 지역경제 회복을 위한 특별법"
 ```
@@ -115,7 +118,13 @@ The search API has no "successor law" field, but the **repealed-law detail** (`l
 - **Amendment-reason prose** — extracts 「successor law」 names from the enactment/amendment reason (filtering out the addendum's "amendments to other laws", which are collateral, and keeping only law-shaped names).
 - **Absorption signal** (`absorbed`) — phrases like "…merged into the general account" mean *no successor law* → a strong **D** signal.
 
-Candidate count drives the class: **1 → B (transfer)**, **2+ → C (split)**, **0 + absorption → D**. All are flagged for manual confirmation, because an extracted candidate is the *law's general successor*, which may differ from the *specific provision's* successor (the split-transfer trap).
+Candidate count drives the class: **1 → B (transfer)**, **2+ → C (split)**, **0 + absorption → D**. All are flagged for manual confirmation.
+
+### Content-based successor discovery (split transfers)
+
+The back-traced candidate is the *law's general successor* — which often differs from the *specific provision's* successor (the split-transfer trap). For example, 국가균형발전 특별법's general successor is 「지방자치분권 및 지역균형발전에 관한 특별법」, but its art. 17(2) 산업위기대응특별지역 scheme actually moved to a **different** law: 「지역 산업위기 대응 및 지역경제 회복을 위한 특별법」.
+
+lawdangle finds that automatically: it takes the **distinctive concept terms** from the old article's text (e.g. *산업위기대응특별지역*) and searches current **law names** for them — the law that *defines* the scheme surfaces (usually a single hit), and article mapping follows. So `--map` works even when you do **not** supply the successor, and `--deep` attaches the discovered successor + article to B/C results.
 
 ## Article correspondence (`--map`, `--deep`)
 

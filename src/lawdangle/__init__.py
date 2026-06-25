@@ -8,7 +8,13 @@ from __future__ import annotations
 
 from .classifier import classify
 from .cli import run, run_law
-from .mapper import MappingSuggestion, rank_correspondence, suggest_mapping
+from .mapper import (
+    MappingSuggestion,
+    discover_successors,
+    rank_correspondence,
+    suggest_mapping,
+    suggest_mapping_auto,
+)
 from .models import (
     Category,
     Citation,
@@ -37,6 +43,8 @@ __all__ = [
     "FixtureResolver",
     "LawGoKrResolver",
     "suggest_mapping",
+    "suggest_mapping_auto",
+    "discover_successors",
     "rank_correspondence",
     "MappingSuggestion",
     "__version__",
