@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "lawdangle-kr"
-version = "0.1.0"
+version = "0.1.1"
 description = "Dead cross-reference detector for Korean statutes"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -20,6 +20,8 @@ lawdangle = "lawdangle.cli:main"   # CLI 명령 → 함수 연결
 
 [project.urls]
 Homepage = "https://github.com/yabooung/lawdangle-kr"
+Repository = "https://github.com/yabooung/lawdangle-kr"
+Issues = "https://github.com/yabooung/lawdangle-kr/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/lawdangle"]   # src 레이아웃 → import명 lawdangle
