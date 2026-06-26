@@ -4,9 +4,9 @@
 > Detects and classifies references in in-force Korean laws that point to **repealed, renamed, transferred, or obsolete** target laws.
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/yabooung/lawdangle-kr/blob/master/LICENSE)
 
-**한국어 README → [README.ko.md](README.ko.md)**
+**한국어 README → [README.ko.md](https://github.com/yabooung/lawdangle-kr/blob/master/README.ko.md)**
 
 ---
 
@@ -168,8 +168,8 @@ pytest                     # offline tests run anywhere; live API tests run only
 
 Live tests read the OC key from `LAW_OC` or a local `.env` (`oc=...`); without it they are skipped.
 
-See [DESIGN.md](DESIGN.md) for the full design rationale.
+See [DESIGN.md](https://github.com/yabooung/lawdangle-kr/blob/master/DESIGN.md) for the full design rationale.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](https://github.com/yabooung/lawdangle-kr/blob/master/LICENSE).

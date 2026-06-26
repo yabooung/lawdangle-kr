@@ -26,7 +26,7 @@ from .models import (
 from .parser import parse_citations
 from .resolver import FixtureResolver, LawGoKrResolver, Resolver
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "Category",
