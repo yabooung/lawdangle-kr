@@ -144,12 +144,14 @@ def main(argv: list[str] | None = None) -> int:
         help="B/개명+조문이동 건에 구체 대응 조문까지 매핑(라이브, 느림)",
     )
     p.add_argument("-o", "--output", help="출력 파일 (미지정 시 표준출력)")
-    args = p.parse_args(argv)
 
     # Windows 콘솔(cp949) 등에서 한글/em-dash 출력 깨짐·크래시 방지.
+    # parse_args() 전에 재설정해야 --help·인자 오류 메시지도 깨지지 않음.
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
+
+    args = p.parse_args(argv)
 
     # --- 조문 대응 제안 모드 -------------------------------------------- #
     if args.map:
