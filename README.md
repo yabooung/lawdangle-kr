@@ -1,12 +1,20 @@
-# lawdangle-kr
+<div align="center">
 
-> **Dead Cross-Reference Detector for Korean Statutes**
-> Detects and classifies references in in-force Korean laws that point to **repealed, renamed, transferred, or obsolete** target laws.
+<img src="assets/social-preview.png" alt="lawdangle-kr — dead cross-reference detector for Korean statutes" width="760">
 
-[![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](https://github.com/yabooung/lawdangle-kr/blob/master/LICENSE)
+<p>
+  <a href="https://pypi.org/project/lawdangle-kr/"><img src="https://img.shields.io/pypi/v/lawdangle-kr?color=2563eb&label=PyPI&logo=pypi&logoColor=white" alt="PyPI version"></a>
+  <a href="https://pypi.org/project/lawdangle-kr/"><img src="https://img.shields.io/pypi/pyversions/lawdangle-kr?logo=python&logoColor=white" alt="Python versions"></a>
+  <a href="https://pypi.org/project/lawdangle-kr/"><img src="https://img.shields.io/pypi/dm/lawdangle-kr?color=success&label=downloads" alt="PyPI downloads"></a>
+  <a href="https://github.com/yabooung/lawdangle-kr/blob/master/LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="License: MIT"></a>
+  <a href="https://github.com/yabooung/lawdangle-kr/blob/master/README.ko.md"><img src="https://img.shields.io/badge/README-한국어-orange.svg" alt="한국어 README"></a>
+</p>
 
-**한국어 README → [README.ko.md](https://github.com/yabooung/lawdangle-kr/blob/master/README.ko.md)**
+<strong>Dead cross-reference detector for Korean statutes</strong><br>
+Detects and classifies references in in-force Korean laws that point to
+<strong>repealed, renamed, transferred, or obsolete</strong> target laws.
+
+</div>
 
 ---
 
