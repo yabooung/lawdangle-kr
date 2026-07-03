@@ -112,7 +112,8 @@ def _article_key(jo: dict) -> str | None:
 def extract_articles(detail: dict) -> dict[str, str]:
     """lawService.do 상세 → {조문키: 본문텍스트}. 조문내용+항+호 포함."""
     law = detail.get("법령", detail)
-    jos = law.get("조문", {}).get("조문단위", [])
+    # API가 키를 아예 빼면 .get 기본값이 먹지만, 명시적 null이면 None이 오므로 `or`로 방어.
+    jos = (law.get("조문") or {}).get("조문단위") or []
     if isinstance(jos, dict):
         jos = [jos]
     out: dict[str, str] = {}
@@ -145,7 +146,7 @@ def extract_articles_detailed(detail: dict) -> dict[str, dict]:
     조 단위 매핑(text) + 항 단위 정밀화(hangs)에 함께 쓴다.
     """
     law = detail.get("법령", detail)
-    jos = law.get("조문", {}).get("조문단위", [])
+    jos = (law.get("조문") or {}).get("조문단위") or []
     if isinstance(jos, dict):
         jos = [jos]
     out: dict[str, dict] = {}
@@ -154,7 +155,7 @@ def extract_articles_detailed(detail: dict) -> dict[str, dict]:
         if not key:
             continue
         hangs: dict[int, str] = {}
-        hl = jo.get("항", [])
+        hl = jo.get("항") or []
         if isinstance(hl, dict):
             hl = [hl]
         for h in hl:
@@ -165,9 +166,23 @@ def extract_articles_detailed(detail: dict) -> dict[str, dict]:
     return out
 
 
+# 조 '전체' 삭제: '[제N조] 삭제 <날짜>' 형태(마커 뒤에 실질 내용이 없어야 함).
+_FULLY_DELETED_RE = re.compile(r"^(?:제\d+조(?:의\d+)?\s*)?삭제\s*<[^>]*>\s*$")
+
+
 def is_deleted(text: str) -> bool:
-    """조문 본문이 '삭제'(예: '제17조 삭제 <2021.8.17>')인가."""
-    return "삭제 <" in text[:25] or text.strip().endswith("삭제")
+    """조문 '전체'가 삭제됐는가('제17조 삭제 <2021.8.17>').
+
+    부분삭제(예: '① 삭제 <2018.3.27> ② 살아있는 내용…')는 조가 살아있으므로 False.
+    (기존엔 '삭제 <'가 앞 25자 안에 있으면 무조건 True라 부분삭제 조를 삭제로 오판했다.)
+    """
+    t = text.strip()
+    if not t:
+        return False
+    if _FULLY_DELETED_RE.match(t):
+        return True
+    # 날짜표기 없이 '[제N조] 삭제'만인 경우.
+    return re.fullmatch(r"(?:제\d+조(?:의\d+)?\s*)?삭제", t) is not None
 
 
 # 타법 부칙 헤더 "부칙(폐지시킨 법명) <제○호,날짜>" → 폐지시킨(=후속) 법명.

@@ -47,3 +47,15 @@ def test_self_name_excluded():
     detail = {"법령": {"제개정이유": {"제개정이유내용": [["「구법」을 폐지한다"]]}}}
     cand, _, _ = parse_repeal_detail(detail, "구법")
     assert cand == []  # 자기 자신은 후보에서 제외
+
+
+from lawdangle.resolver import is_deleted
+
+
+def test_is_deleted_full_vs_partial():
+    assert is_deleted("제50조의2 삭제 <2024.3.19>") is True
+    assert is_deleted("제17조 삭제") is True
+    # 부분삭제(① 삭제 <> ② 살아있는 내용)는 조가 살아있음 → False.
+    assert is_deleted("① 삭제 <2018.3.27> ② 고속도로등을 운행하는 차의 운전자는") is False
+    # 문장이 '삭제'로 끝나도 조 전체 삭제가 아님 → False.
+    assert is_deleted("관련 기록을 지체 없이 삭제") is False

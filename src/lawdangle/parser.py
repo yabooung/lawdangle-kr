@@ -22,6 +22,10 @@ _CITATION_RE = re.compile(
 # DESIGN.md §3 ① 주의 — 고시명/별표명 배제.
 _NON_LAW_SUFFIX = ("별표", "별지", "서식", "고시", "공고", "훈령", "예규", "지침")
 
+# 법령명이 끝나는 꼬리말(긍정 조건). 한국 법령·자치법규·조약은 사실상 이 중 하나로 끝난다.
+# 이게 없으면 「위원회」·「제3호」·「방법」 같은 비법령 괄호를 법령으로 오추출한다.
+_LAW_SUFFIX = ("법", "법률", "령", "규칙", "규정", "조례", "조약", "협정")
+
 
 def _looks_like_law(name: str) -> bool:
     name = name.strip()
@@ -32,7 +36,8 @@ def _looks_like_law(name: str) -> bool:
     stem = re.sub(r"[\s\d제\-호]+$", "", name)
     if stem.endswith(_NON_LAW_SUFFIX):
         return False
-    return True
+    # 법령 접미사로 끝나야 법령으로 인정 — 정의어(「위원회」)·호 참조(「제3호」) 오추출 차단.
+    return name.endswith(_LAW_SUFFIX)
 
 
 def _clean_article(article: str | None) -> str | None:

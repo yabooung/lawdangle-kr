@@ -19,6 +19,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from .client import _mst_of
 from .models import Category, LawStatus, Result
 from .resolver import LawGoKrResolver, is_deleted
 
@@ -99,10 +100,10 @@ def find_old_article_detailed(
     returns (시행일자, 조본문, 항본문). 항 미지정/없음이면 항본문은 "".
     """
     for row in resolver.versions(old_law):
-        mst = row.get("법령일련번호")
+        mst = _mst_of(row)  # 법령일련번호 없으면 상세링크 MST로 폴백(코드베이스 일관)
         if not mst:
             continue
-        detail = resolver.articles_detailed(str(mst))
+        detail = resolver.articles_detailed(mst)
         jo = detail.get(article_key)
         if jo and jo["text"] and not is_deleted(jo["text"]):
             hang_text = jo["hangs"].get(hang, "") if hang is not None else ""
@@ -276,11 +277,17 @@ def enrich_result(result: Result, resolver: LawGoKrResolver) -> Result:
         # 이관·분할 → 후속법을 본문으로 자동 발견한 뒤 매핑(분할 이관 자동 처리).
         s = suggest_mapping_auto(resolver, c.cited_law_name, c.cited_article)
 
-    if s and s.best:
+    if s and s.best and s.best.score >= _CONFIDENT_MIN:
         tag = "유력" if s.confident else "후보"
         result.successor_suggestion = f"{s.successor_law} {s.best.article}"
         result.note += (
             f" | 조문제안({tag}): 「{s.successor_law}」 {s.best.article}"
             f"(유사도 {s.best.score})"
+        )
+    elif s and s.successor_law:
+        # 유사도가 임계 미만이면 구체 조문을 단정하지 않는다(설계 원칙 §6 함정2).
+        # 발견한 후속법만 알리고 조문 대응은 수동으로 남긴다.
+        result.note += (
+            f" | 조문대응 불명(유사도 낮음, 수동 확인): 후속법 후보 「{s.successor_law}」"
         )
     return result

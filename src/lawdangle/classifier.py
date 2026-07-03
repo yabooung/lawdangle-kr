@@ -29,6 +29,22 @@ def _normalize_name(name: str) -> str:
     return name.replace("ㆍ", "").replace("·", "").replace(" ", "").strip()
 
 
+def _dedup(names: list[str]) -> list[str]:
+    """정규화상 동일한 이름 중복 제거(순서 보존).
+
+    후속법이 표기만 다르게 두 번 들어오면(예: '지역보건법' vs '지역 보건법')
+    개수가 부풀려져 단일 이관(B)이 분할 승계(C)로 오분류되는 것을 막는다.
+    """
+    seen: set[str] = set()
+    out: list[str] = []
+    for x in names:
+        k = _normalize_name(x)
+        if k and k not in seen:
+            seen.add(k)
+            out.append(x)
+    return out
+
+
 def classify(citation: Citation, history: HistoryInfo) -> Result:
     """인용 레코드 + 연혁 → 5분류 판정.
 
@@ -67,11 +83,11 @@ def classify(citation: Citation, history: HistoryInfo) -> Result:
 
     # --- 2. 개명(법인격 동일) → 조문 보존 여부로 A vs B 분기 ------------- #
     if status == LawStatus.RENAMED:
-        current = history.current_name
+        current = history.current_name or cited_name  # None이면 note에 'None' 출력 방지
         art_key = _article_key(citation.cited_article)
 
-        # 인용 조문이 현행본에 살아있으면 깨끗한 개명(A: 법명만 교체).
-        if art_key is None or not history.alive_articles or art_key in history.alive_articles:
+        # 인용 조문 없음, 또는 현행본에 살아있음이 '확인'됨 → 깨끗한 개명(A). 여기서만 HIGH.
+        if art_key is None or (history.alive_articles and art_key in history.alive_articles):
             return Result(
                 citation=citation,
                 history=history,
@@ -81,7 +97,23 @@ def classify(citation: Citation, history: HistoryInfo) -> Result:
                 note=f"단순 개명: 「{cited_name}」 → 「{current}」 (법명만 교체)",
             )
 
-        # 법은 개명됐으나 인용 조문이 현행본에 없음(삭제/전부개정 재번호) → B.
+        # 개명은 확인됐으나 조문 생존을 확인 못함(enrich 꺼짐/현행본 조회 실패) →
+        # A로 보되 '미확인'을 '확인'과 구분해 확신을 낮추고 플래그(과신 방지).
+        if not history.alive_articles:
+            return Result(
+                citation=citation,
+                history=history,
+                category=Category.A,
+                confidence=Confidence.MEDIUM,
+                successor_suggestion=current,
+                flag=True,
+                note=(
+                    f"개명: 「{cited_name}」 → 「{current}」. 다만 인용 {art_key}의 "
+                    "현행본 생존을 확인하지 못함 — 조문 대조 권장 [수동]"
+                ),
+            )
+
+        # 개명됐고 인용 조문이 현행본에 없음(삭제/전부개정 재번호) → B.
         return Result(
             citation=citation,
             history=history,
@@ -98,7 +130,8 @@ def classify(citation: Citation, history: HistoryInfo) -> Result:
 
     # --- 3. 폐지 → 후속법 분석 ------------------------------------------ #
     if status == LawStatus.REPEALED:
-        n = len(history.successors)
+        succ = _dedup(history.successors)  # 표기만 다른 중복이 B를 C로 부풀리는 것 방지
+        n = len(succ)
 
         if n == 1:
             # 후속법 단일. 조문 대응이 깨질 수 있으므로(함정 2) 조문 교체 플래그.
@@ -108,10 +141,10 @@ def classify(citation: Citation, history: HistoryInfo) -> Result:
                 history=history,
                 category=Category.B,
                 confidence=Confidence.MEDIUM,
-                successor_suggestion=history.successors[0],
+                successor_suggestion=succ[0],
                 flag=True,
                 note=(
-                    f"전부개정·이관: 제도가 「{history.successors[0]}」(으)로 승계. "
+                    f"전부개정·이관: 제도가 「{succ[0]}」(으)로 승계. "
                     "법명+조문 교체 필요 — 조문번호 대응 확인할 것"
                 ),
             )
@@ -123,7 +156,7 @@ def classify(citation: Citation, history: HistoryInfo) -> Result:
                 history=history,
                 category=Category.C,
                 confidence=Confidence.MANUAL,
-                successor_suggestion=", ".join(history.successors),
+                successor_suggestion=", ".join(succ),
                 flag=True,
                 note=(
                     "분할 승계(1:N): 내용이 여러 법으로 분산. "
@@ -149,7 +182,7 @@ def classify(citation: Citation, history: HistoryInfo) -> Result:
 
         if history.successor_candidates:
             # 후속법 후보(타법폐지 역추적/제개정이유) — 개수로 B(이관)/C(분할) 구분.
-            cands = history.successor_candidates
+            cands = _dedup(history.successor_candidates)  # 표기 중복 제거 후 개수 판정
             joined = ", ".join(cands)
             if len(cands) == 1:
                 return Result(

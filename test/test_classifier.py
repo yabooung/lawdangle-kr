@@ -146,3 +146,33 @@ def test_normalize_middot_not_rename():
 def test_severity_order():
     assert Category.E.severity < Category.C.severity < Category.D.severity
     assert Category.D.severity < Category.B.severity < Category.A.severity
+
+
+# --- 회귀: 감사에서 발견·수정된 오분류 (v0.3.1) --- #
+
+
+def test_dedup_successors_keeps_B_not_C():
+    # 표기만 다른 중복 후속법이 개수를 부풀려 B를 C로 오분류하던 것 방지.
+    h = HistoryInfo(status=LawStatus.REPEALED, successors=["국민건강보험법", "국민건강보험법"])
+    assert classify(_cite(), h).category == Category.B
+
+
+def test_dedup_candidates_keeps_B_not_C():
+    h = HistoryInfo(
+        status=LawStatus.REPEALED, successors=[],
+        successor_candidates=["지역보건법", "지역 보건법"],  # 정규화상 동일
+    )
+    assert classify(_cite(), h).category == Category.B
+
+
+def test_rename_unverified_article_is_A_but_not_high():
+    # 개명인데 조문 생존을 확인 못하면(alive_articles 빈집합) A로 보되 HIGH 금지·플래그.
+    h = HistoryInfo(status=LawStatus.RENAMED, current_name="새법", alive_articles=set())
+    r = classify(_cite(art="제17조"), h)
+    assert r.category == Category.A
+    assert r.confidence != Confidence.HIGH and r.flag is True
+
+
+def test_rename_none_current_name_no_literal_None():
+    r = classify(_cite(art=None), HistoryInfo(status=LawStatus.RENAMED, current_name=None))
+    assert "None" not in r.note

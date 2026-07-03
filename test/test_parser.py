@@ -36,3 +36,9 @@ def test_article_to_code():
     assert article_to_code("제5조") == "000500"
     assert article_to_code("제5조의2") == "000502"
     assert article_to_code("제17조제2항") == "001700"
+
+
+def test_rejects_non_law_brackets():
+    # 「위원회」(정의어)·「제3호」(호 참조)는 법령이 아님 → 추출 제외.
+    cites = parse_citations("이 규정에서 「위원회」란 「제3호」 및 「국가균형발전 특별법」 제5조")
+    assert [c.cited_law_name for c in cites] == ["국가균형발전 특별법"]
