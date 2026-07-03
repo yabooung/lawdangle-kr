@@ -44,7 +44,9 @@ def _row(r: Result) -> dict:
 
 def to_csv(results: list[Result]) -> str:
     buf = io.StringIO()
-    writer = csv.DictWriter(buf, fieldnames=CSV_COLUMNS)
+    # lineterminator="\n" — 기본 "\r\n"이면 파일 텍스트모드 저장 시 Windows에서
+    # \n→\r\n 재변환으로 \r\r\n(줄바꿈 깨짐)이 된다. "\n"으로 두면 저장 시 정상 변환.
+    writer = csv.DictWriter(buf, fieldnames=CSV_COLUMNS, lineterminator="\n")
     writer.writeheader()
     for r in results:
         writer.writerow(_row(r))
