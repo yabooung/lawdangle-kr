@@ -16,6 +16,7 @@ from .classifier import classify
 from .mapper import enrich_result, suggest_mapping, suggest_mapping_auto
 from .parser import parse_citations
 from .resolver import FixtureResolver, LawGoKrResolver, Resolver
+from .search import get_law_text, search_law
 from .models import Result
 
 
@@ -104,6 +105,42 @@ def _run_map(args) -> int:
     return 0
 
 
+def _run_search(args) -> int:
+    """--search: 법령명·키워드 검색(현행/연혁 목록)."""
+    oc = args.oc or os.environ.get("LAW_OC")
+    if not oc:
+        sys.exit("법령 검색은 법제처 API 키(--oc 또는 LAW_OC)가 필요합니다.")
+    resolver = LawGoKrResolver(oc)
+    results = search_law(resolver, args.search, current_only=args.current)
+    if not results:
+        print(f"「{args.search}」 검색 결과가 없습니다.")
+        return 0
+    for r in results:
+        abbr = f" (약칭:{r.abbr})" if r.abbr else ""
+        print(f"[{r.status}] {r.name}{abbr}  {r.law_type}  시행 {r.enforce_date}  ID {r.law_id}")
+    return 0
+
+
+def _run_text(args) -> int:
+    """--text: 현행 법령 조문 조회('법령명' 또는 '법령명 조문')."""
+    oc = args.oc or os.environ.get("LAW_OC")
+    if not oc:
+        sys.exit("조문 조회는 법제처 API 키(--oc 또는 LAW_OC)가 필요합니다.")
+    if len(args.text) not in (1, 2):
+        sys.exit("--text 는 '법령명' 또는 '법령명 조문' 형식입니다.")
+    resolver = LawGoKrResolver(oc)
+    law = args.text[0]
+    article = args.text[1] if len(args.text) == 2 else None
+    try:
+        lt = get_law_text(resolver, law, article)
+    except ValueError as e:
+        sys.exit(str(e))
+    print(f"「{lt.name}」" + (f" {lt.requested_article}" if lt.requested_article else " (전문)"))
+    for key, body in lt.articles.items():
+        print(f"\n{key}  {body}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(
         prog="lawdangle",
@@ -124,6 +161,22 @@ def main(argv: list[str] | None = None) -> int:
         nargs="+",
         metavar="옛법령 조문 [후속법령]",
         help="조문 대응 제안: '옛법령 조문' (후속법 자동발견) 또는 '옛법령 조문 후속법령' (직접 지정)",
+    )
+    p.add_argument(
+        "--search",
+        metavar="검색어",
+        help="법령명·키워드 검색(라이브). --current 로 현행만",
+    )
+    p.add_argument(
+        "--text",
+        nargs="+",
+        metavar="법령명 [조문]",
+        help="현행 조문 조회: '법령명' 또는 '법령명 제5조'(라이브)",
+    )
+    p.add_argument(
+        "--current",
+        action="store_true",
+        help="--search 시 현행 법령만 표시",
     )
     p.add_argument("--citing-law", default="", help="인용하는 쪽 법령명(리포트용)")
     p.add_argument("--oc", help="법제처 OPEN API 인증키(OC). 없으면 LAW_OC 환경변수")
@@ -152,6 +205,12 @@ def main(argv: list[str] | None = None) -> int:
             stream.reconfigure(encoding="utf-8", errors="replace")
 
     args = p.parse_args(argv)
+
+    # --- 법령 검색 / 조문 조회 모드 ------------------------------------- #
+    if args.search:
+        return _run_search(args)
+    if args.text:
+        return _run_text(args)
 
     # --- 조문 대응 제안 모드 -------------------------------------------- #
     if args.map:

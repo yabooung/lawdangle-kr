@@ -98,3 +98,40 @@ class Result:
     successor_suggestion: str | None = None
     flag: bool = False    # 수동 확인 필요 여부 (C/D/E)
     note: str = ""
+
+
+# --------------------------------------------------------------------------- #
+# 검색/조회 결과 모델 (search.py 출력 — 법령검색·조문조회 공개 API)
+# --------------------------------------------------------------------------- #
+
+
+@dataclass
+class LawSearchResult:
+    """`search_law()` 출력 — 법령 검색결과 1건."""
+
+    law_id: str              # 법령ID
+    name: str                # 법령명한글
+    status: str              # 현행연혁코드 (현행/연혁/시행예정)
+    enforce_date: str        # 시행일자 (YYYYMMDD)
+    abbr: str | None = None  # 법령약칭명(있을 때)
+    law_type: str = ""       # 법종구분명 (법률/대통령령/부령 …)
+    mst: str | None = None   # 법령일련번호 — 상세/조문 조회 키
+    detail_link: str = ""    # 법령상세링크
+
+    @property
+    def is_current(self) -> bool:
+        return self.status == "현행"
+
+
+@dataclass
+class LawText:
+    """`get_law_text()` 출력 — 조문 본문 묶음.
+
+    특정 조문 지정 시 `articles` 는 1건, `requested_article` 이 채워진다.
+    """
+
+    name: str                              # 법령명한글(현행)
+    articles: dict[str, str]               # {조문키(제N조[의M]): 본문}
+    law_id: str | None = None
+    enforce_date: str | None = None
+    requested_article: str | None = None   # 특정 조문 조회 시 요청 키

@@ -33,6 +33,7 @@ import time
 from pathlib import Path
 from typing import Protocol
 
+from .client import LawClient, _as_rows, _exact, _latest, _mst_of, _norm
 from .models import HistoryInfo, LawStatus
 
 # 같은 법령 반복 조회가 많음 → law명 기준 캐시(DESIGN: TTL 24h 권장).
@@ -48,44 +49,8 @@ class Resolver(Protocol):
     def resolve(self, cited_law_name: str) -> HistoryInfo: ...
 
 
-# --------------------------------------------------------------------------- #
-# 정규화 헬퍼
-# --------------------------------------------------------------------------- #
-
-
-def _norm(name: str) -> str:
-    """법명 비교용 정규화 — 가운뎃점/공백 차이 무시 (classifier와 동일 규칙)."""
-    return name.replace("ㆍ", "").replace("·", "").replace(" ", "").strip()
-
-
-def _as_rows(search_json: dict) -> list[dict]:
-    """lawSearch.do 응답 → law 행 리스트. (1건이면 dict, 0건이면 키 없음)"""
-    ls = search_json.get("LawSearch", search_json)
-    rows = ls.get("law", [])
-    if isinstance(rows, dict):
-        return [rows]
-    return rows or []
-
-
-def _exact(rows: list[dict], name: str) -> list[dict]:
-    target = _norm(name)
-    return [r for r in rows if _norm(r.get("법령명한글", "")) == target]
-
-
-def _latest(rows: list[dict]) -> dict:
-    """시행일자(YYYYMMDD) 최신 행."""
-    return max(rows, key=lambda r: r.get("시행일자", "") or "")
-
-
-def _mst_of(row: dict) -> str | None:
-    """검색행에서 상세조회용 MST(법령일련번호) 추출."""
-    mst = row.get("법령일련번호")
-    if mst:
-        return str(mst)
-    link = row.get("법령상세링크", "")
-    m = re.search(r"MST=(\d+)", link)
-    return m.group(1) if m else None
-
+# 정규화/행 헬퍼(_norm, _as_rows, _exact, _latest, _mst_of)는 client.py로 이관해
+# resolver·search 가 공유한다.
 
 # 흡수 신호 — 후속 '법' 없이 회계/제도로 흡수(특별회계→일반회계)되는 D 강신호.
 # generic "통합"은 너무 흔해 오탐 → '일반회계' 흡수로 한정(보수적).
@@ -308,8 +273,6 @@ class LawGoKrResolver:
     상태 판정(현행/폐지)까지 자동. 후속법은 검색 API로 불가 → 수동 플래그.
     """
 
-    BASE = "http://www.law.go.kr/DRF"
-
     def __init__(
         self,
         oc: str,
@@ -317,7 +280,9 @@ class LawGoKrResolver:
         cache_ttl: int = _CACHE_TTL_SEC,
         timeout: int = 10,
         enrich: bool = True,
+        client: LawClient | None = None,
     ):
+        self.client = client or LawClient(oc, timeout=timeout)
         self.oc = oc
         self.timeout = timeout
         self.enrich = enrich  # 폐지법 상세까지 긁어 후보/흡수신호 보강
@@ -416,7 +381,7 @@ class LawGoKrResolver:
         """
         if self._abbr_map is None:
             self._abbr_map = {}
-            rows = _as_rows(self._get("lawSearch", {"target": "lsAbrv"}))
+            rows = _as_rows(self.client.get("lawSearch", {"target": "lsAbrv"}))
             order = {"현행": 0, "시행예정": 1, "연혁": 2}
             rows.sort(key=lambda r: order.get((r.get("현행연혁코드") or "").strip(), 3))
             for r in rows:
@@ -514,34 +479,14 @@ class LawGoKrResolver:
         return out
 
     def _search(self, target: str, query: str) -> dict:
-        return self._get("lawSearch", {"target": target, "query": query})
+        return self.client.search(target, query)
 
     def _search_by_id(self, target: str, law_id: str) -> dict:
         """법령ID로 검색 — 현행 생존 여부/현행명 확인용(개명 판정)."""
-        return self._get("lawSearch", {"target": target, "ID": law_id})
+        return self.client.search_by_id(target, law_id)
 
     def _service(self, target: str, mst: str) -> dict:
-        return self._get("lawService", {"target": target, "MST": mst})
-
-    def _get(self, endpoint: str, extra: dict, *, retries: int = 2) -> dict:
-        import requests  # 지연 임포트 — 오프라인 경로에선 불필요
-
-        params = {"OC": self.oc, "type": "JSON", **extra}
-        url = f"{self.BASE}/{endpoint}.do"
-        last_err: Exception | None = None
-        for attempt in range(retries + 1):
-            try:
-                resp = requests.get(url, params=params, timeout=self.timeout)
-                resp.raise_for_status()
-                try:
-                    return resp.json()
-                except json.JSONDecodeError:
-                    return {}
-            except requests.RequestException as e:  # 네트워크/HTTP 일시 오류 → 재시도
-                last_err = e
-                if attempt < retries:
-                    time.sleep(0.5 * (attempt + 1))
-        raise RuntimeError(f"법제처 API 호출 실패({endpoint}): {last_err}") from last_err
+        return self.client.service(target, mst)
 
 
 # --------------------------------------------------------------------------- #

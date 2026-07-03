@@ -15,18 +15,22 @@ from .mapper import (
     suggest_mapping,
     suggest_mapping_auto,
 )
+from .client import LawApiError, LawClient
 from .models import (
     Category,
     Citation,
     Confidence,
     HistoryInfo,
+    LawSearchResult,
     LawStatus,
+    LawText,
     Result,
 )
 from .parser import parse_citations
 from .resolver import FixtureResolver, LawGoKrResolver, Resolver
+from .search import get_law_text, search_law
 
-__version__ = "0.1.1"
+__version__ = "0.2.0"
 
 __all__ = [
     "Category",
@@ -34,14 +38,20 @@ __all__ = [
     "Confidence",
     "HistoryInfo",
     "LawStatus",
+    "LawSearchResult",
+    "LawText",
     "Result",
     "classify",
     "run",
     "run_law",
     "parse_citations",
+    "search_law",
+    "get_law_text",
     "Resolver",
     "FixtureResolver",
     "LawGoKrResolver",
+    "LawClient",
+    "LawApiError",
     "suggest_mapping",
     "suggest_mapping_auto",
     "discover_successors",
