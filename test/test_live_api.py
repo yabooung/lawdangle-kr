@@ -127,6 +127,37 @@ def test_unknown_law(resolver):
     assert info.status == LawStatus.UNKNOWN
 
 
+# 등급별 실데이터 회귀 — resolve 신호가 분류 분기를 정확히 만드는지(2026-07 라이브 확인).
+# (법령명, 기대 status, 판별식) — 판별식이 곧 classify의 A/B/C/D 분기를 결정.
+_LIVE_CASES = [
+    ("정보통신망법", LawStatus.CURRENT, lambda i: i.name_form == "alias"),                       # A-약칭
+    ("청소년의 성보호에 관한 법률", LawStatus.CURRENT, lambda i: i.name_form == "partial"),        # A-부분명
+    ("기부금품의 모집 및 사용에 관한 법률", LawStatus.RENAMED,
+     lambda i: "기부문화" in (i.current_name or "")),                                             # A-개명
+    ("저탄소 녹색성장 기본법", LawStatus.REPEALED,
+     lambda i: len(i.successor_candidates) == 1 and "탄소중립" in i.successor_candidates[0]),     # B-이관
+    ("국토이용관리법", LawStatus.REPEALED, lambda i: len(i.successor_candidates) == 1),           # B-이관
+    ("음반ㆍ비디오물 및 게임물에 관한 법률", LawStatus.REPEALED,
+     lambda i: len(i.successor_candidates) >= 2),                                                # C-분할
+    ("국유재산관리특별회계법", LawStatus.REPEALED,
+     lambda i: i.absorbed and not i.successor_candidates),                                        # D-흡수
+    ("사회보호법", LawStatus.REPEALED,
+     lambda i: not i.successor_candidates and not i.absorbed),                                    # D-무신호
+    ("식품위생법", LawStatus.CURRENT, lambda i: i.name_form == "exact"),                          # 정상
+    ("화관법", LawStatus.UNKNOWN, lambda i: True),                                                # 비공식약칭 → UNKNOWN
+]
+
+
+@pytest.mark.parametrize("name,expected_status,check", _LIVE_CASES)
+def test_live_category_signals(resolver, name, expected_status, check):
+    info = resolver.resolve(name)
+    assert info.status == expected_status, f"{name}: status={info.status}"
+    assert check(info), (
+        f"{name}: 분류 신호 불일치 "
+        f"(form={info.name_form}, cand={info.successor_candidates}, absorbed={info.absorbed})"
+    )
+
+
 def test_mapper_finds_design_answer(resolver):
     # DESIGN §2 B케이스: 국가균형발전법 §17② 제도 → 「지역 산업위기…특별법」 §10.
     # 연혁 walk로 삭제 전 실본문을 찾아 본문 유사도 #1 후보가 제10조여야 한다.
