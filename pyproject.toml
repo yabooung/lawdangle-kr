@@ -33,7 +33,6 @@ include = [
     "examples",
     "README.md",
     "README.ko.md",
-    "DESIGN.md",
     "LICENSE",
     "pyproject.toml",
 ]
