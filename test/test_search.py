@@ -51,10 +51,13 @@ def _resolver(search_map=None, service_map=None):
 def test_normalize_article_key():
     assert normalize_article_key("제5조") == "제5조"
     assert normalize_article_key("5") == "제5조"
+    assert normalize_article_key("5조") == "제5조"
     assert normalize_article_key("제5조의2") == "제5조의2"
     assert normalize_article_key("제5조제2항") == "제5조"  # 항은 조로 환원
-    with pytest.raises(ValueError):
-        normalize_article_key("법령")
+    # 조가 아닌 단위(장/절/항/호)를 조로 오독하면 안 됨 → 거부.
+    for bad in ["법령", "제3장", "제5호", "제2항", "부칙"]:
+        with pytest.raises(ValueError):
+            normalize_article_key(bad)
 
 
 # --- search_law -------------------------------------------------------- #
@@ -64,7 +67,7 @@ def test_search_law_lists_all_and_current_only():
     r = _resolver(search_map={
         ("law", "민법"): _search_resp([
             {"법령ID": "1", "법령명한글": "민법", "현행연혁코드": "현행",
-             "시행일자": "20230101", "법종구분명": "법률", "법령일련번호": "100"},
+             "시행일자": "20230101", "법령구분명": "법률", "법령일련번호": "100"},
             {"법령ID": "1", "법령명한글": "민법", "현행연혁코드": "연혁",
              "시행일자": "20200101", "법령일련번호": "90"},
         ]),
@@ -88,13 +91,24 @@ def test_search_law_empty_returns_list():
     assert search_law(_resolver(), "존재하지않는법") == []
 
 
+def test_search_law_relevance_orders_exact_first():
+    # 법제처 부분일치로 '민법' 검색 시 '난민법'이 섞여도 정확일치가 앞에 와야 함.
+    r = _resolver(search_map={("law", "민법"): _search_resp([
+        {"법령ID": "2", "법령명한글": "난민법", "현행연혁코드": "현행", "시행일자": "20230101"},
+        {"법령ID": "3", "법령명한글": "난민법 시행령", "현행연혁코드": "현행", "시행일자": "20230101"},
+        {"법령ID": "1", "법령명한글": "민법", "현행연혁코드": "현행", "시행일자": "20230101"},
+    ])})
+    names = [x.name for x in search_law(r, "민법")]
+    assert names[0] == "민법", names  # 정확일치가 최상단
+
+
 # --- get_law_text ------------------------------------------------------ #
 
 
 def test_get_law_text_full_and_single_article():
     search_map = {("law", "민법"): _search_resp([
-        {"법령명한글": "민법", "현행연혁코드": "현행", "시행일자": "20230101",
-         "법령일련번호": "100"},
+        {"법령ID": "1000123", "법령명한글": "민법", "현행연혁코드": "현행",
+         "시행일자": "20230101", "법령일련번호": "100"},
     ])}
     service_map = {("law", "100"): _detail({"1": "제1조 본문", "2": "제2조 본문"})}
     r = _resolver(search_map, service_map)
@@ -103,6 +117,7 @@ def test_get_law_text_full_and_single_article():
     assert full.name == "민법"
     assert set(full.articles) == {"제1조", "제2조"}
     assert full.requested_article is None
+    assert full.law_id == "1000123" and full.enforce_date == "20230101"  # 메타 채워짐
 
     one = get_law_text(r, "민법", "제2조")
     assert one.requested_article == "제2조"
