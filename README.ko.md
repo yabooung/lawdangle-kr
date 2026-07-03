@@ -99,6 +99,26 @@ for c in parse_citations(open("law.txt", encoding="utf-8").read()):
     print(res.category, res.note)
 ```
 
+### 법령 검색 · 조문 조회 (v0.2.0)
+
+죽은 참조 탐지 외에, 같은 캐시 클라이언트로 **법령 검색**과 **조문 조회**도
+라이브러리·CLI에서 바로 쓸 수 있다. 공식 약칭·부분명은 자동 해소된다.
+
+```bash
+LAW_OC=your_oc lawdangle --search "개인정보 보호법" --current
+LAW_OC=your_oc lawdangle --text "민법" "제1조"
+```
+
+```python
+from lawdangle import LawGoKrResolver, search_law, get_law_text
+
+r = LawGoKrResolver("your_oc")
+for law in search_law(r, "개인정보 보호법", current_only=True):
+    print(law.name, law.status, law.law_id)
+
+print(get_law_text(r, "민법", "제1조").articles["제1조"])
+```
+
 ## 파이프라인
 
 ```
@@ -168,7 +188,7 @@ pytest                     # 오프라인 테스트는 어디서나; 라이브 A
 
 라이브 테스트는 `LAW_OC` 환경변수 또는 로컬 `.env`(`oc=...`)에서 키를 읽고, 없으면 건너뛴다.
 
-자세한 설계는 [DESIGN.md](DESIGN.md) 참조.
+릴리즈 기록은 [CHANGELOG.md](https://github.com/yabooung/lawdangle-kr/blob/master/CHANGELOG.md) 참조.
 
 ## 라이선스
 

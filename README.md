@@ -107,6 +107,27 @@ for c in parse_citations(open("law.txt", encoding="utf-8").read()):
     print(res.category, res.note)
 ```
 
+### Law search & article lookup (v0.2.0)
+
+Besides dead-reference detection, the same cached live client exposes plain
+**law search** and **article retrieval** — as a library or from the CLI. Official
+abbreviations and truncated names resolve automatically.
+
+```bash
+LAW_OC=your_oc lawdangle --search "개인정보 보호법" --current
+LAW_OC=your_oc lawdangle --text "민법" "제1조"
+```
+
+```python
+from lawdangle import LawGoKrResolver, search_law, get_law_text
+
+r = LawGoKrResolver("your_oc")
+for law in search_law(r, "개인정보 보호법", current_only=True):
+    print(law.name, law.status, law.law_id)
+
+print(get_law_text(r, "민법", "제1조").articles["제1조"])
+```
+
 ## Pipeline
 
 ```
@@ -176,7 +197,7 @@ pytest                     # offline tests run anywhere; live API tests run only
 
 Live tests read the OC key from `LAW_OC` or a local `.env` (`oc=...`); without it they are skipped.
 
-See [DESIGN.md](https://github.com/yabooung/lawdangle-kr/blob/master/DESIGN.md) for the full design rationale.
+See [CHANGELOG.md](https://github.com/yabooung/lawdangle-kr/blob/master/CHANGELOG.md) for release history.
 
 ## License
 
