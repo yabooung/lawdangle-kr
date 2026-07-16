@@ -3,6 +3,25 @@
 이 프로젝트의 주요 변경사항을 기록한다. 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/),
 버전은 [유의적 버전](https://semver.org/lang/ko/)을 따른다.
 
+## [0.3.1] - 2026-07-16
+
+openlaw-etl 배치 enrich 도입 중 라이브 실측으로 발견된 resolve 오판 2건 수정.
+
+### Added
+- `LawStatus.PENDING`(시행예정) 신설: 공포됐으나 시행일 미도래인 법령(제정 직후 등)은
+  현행 검색에 없어 **REPEALED 로 오판**되던 것을(실측: 은퇴자마을 조성 및 운영에 관한
+  특별법, 시행 2027-03-18) 연혁의 `현행연혁코드=시행예정` 행으로 판정. classifier 는
+  PENDING 을 정상(참조 유효, category=None)으로 처리 — 폐지 오알림 차단.
+- `LawGoKrResolver.resolve_by_id(law_id, cited_law_name=None)`: 법령ID 직조회 resolve.
+  **ID를 알면 이름 검색보다 이걸 권장.** (제약: lawSearch 의 ID 파라미터는 target=law
+  전용 — eflaw 는 ID를 무시하므로 연혁 판정엔 `cited_law_name` 필요.)
+
+### Fixed
+- 짧은 법령명 정확일치 누락: DRF 검색이 부분문자열 매칭이라 '상법'이 '…보상법' 수십 건에
+  밀려 첫 페이지(기본 20건) 밖 → UNKNOWN 오판. `display=100` + 정확일치 발견까지
+  최대 3페이지 페이징(`_search_exact`)으로 수정. `versions()`/`current_articles*()` 도
+  동일 경로 사용.
+
 ## [0.3.0] - 2026-07-03
 
 죽은 참조 탐지(고유 강점)의 신뢰도 보강 — 실데이터 기반 회귀 대폭 확충.

@@ -81,6 +81,19 @@ def classify(citation: Citation, history: HistoryInfo) -> Result:
             note=f"{cause}: 「{cited_name}」 → 현행 「{current}」 (풀네임 표기 권장)",
         )
 
+    # --- 1.5 시행예정(공포·시행일 미도래) — 살아있는 참조, 폐지 아님 ------ #
+    #   현행 검색엔 아직 없지만 resolver 가 연혁의 '시행예정' 행으로 확인한 상태.
+    #   죽은 참조가 아니므로 분류 대상 아님(category=None).
+    if status == LawStatus.PENDING:
+        current = history.current_name or cited_name
+        return Result(
+            citation=citation,
+            history=history,
+            category=None,
+            confidence=Confidence.HIGH,
+            note=f"시행예정: 「{current}」 공포·시행일 미도래 — 참조 유효 (폐지 아님)",
+        )
+
     # --- 2. 개명(법인격 동일) → 조문 보존 여부로 A vs B 분기 ------------- #
     if status == LawStatus.RENAMED:
         current = history.current_name or cited_name  # None이면 note에 'None' 출력 방지

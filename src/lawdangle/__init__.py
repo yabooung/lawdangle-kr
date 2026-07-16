@@ -30,7 +30,7 @@ from .parser import parse_citations
 from .resolver import FixtureResolver, LawGoKrResolver, Resolver
 from .search import get_law_text, search_law
 
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 __all__ = [
     "Category",

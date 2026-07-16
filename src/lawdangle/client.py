@@ -43,6 +43,15 @@ def _as_rows(search_json: dict) -> list[dict]:
     return rows or []
 
 
+def _total_count(search_json: dict) -> int:
+    """lawSearch.do 응답의 totalCnt — 페이징 종료 판단용. 미상 0."""
+    ls = search_json.get("LawSearch", search_json)
+    try:
+        return int(ls.get("totalCnt") or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _exact(rows: list[dict], name: str) -> list[dict]:
     target = _norm(name)
     return [r for r in rows if _norm(r.get("법령명한글", "")) == target]
@@ -81,9 +90,16 @@ class LawClient:
         self.oc = oc
         self.timeout = timeout
 
-    def search(self, target: str, query: str) -> dict:
-        """lawSearch.do — 법령명/키워드 검색."""
-        return self.get("lawSearch", {"target": target, "query": query})
+    # 페이지 크기 — DRF 기본 20은 짧은 법명('상법')이 부분문자열 매칭('보상…법')에
+    # 밀려 첫 페이지에서 정확일치가 누락된다(2026-07-16 실측: '상법' 56건 중 후순위).
+    PAGE_SIZE = 100
+
+    def search(self, target: str, query: str, *, page: int | None = None) -> dict:
+        """lawSearch.do — 법령명/키워드 검색 (display=PAGE_SIZE, page 지정 가능)."""
+        params = {"target": target, "query": query, "display": self.PAGE_SIZE}
+        if page is not None:
+            params["page"] = page
+        return self.get("lawSearch", params)
 
     def search_by_id(self, target: str, law_id: str) -> dict:
         """lawSearch.do — 법령ID로 검색(현행 생존/개명 판정용)."""

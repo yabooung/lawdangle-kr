@@ -87,10 +87,12 @@ def test_official_abbreviation_resolved(resolver):
 
 
 def test_partial_name_resolved(resolver):
-    # 부분명(앞부분 생략): '재생에너지 개발ㆍ이용ㆍ보급 촉진법' → 신에너지 및 …
+    # '재생에너지 개발ㆍ이용ㆍ보급 촉진법' → 신에너지 및 …
+    # 0.3.1: eflaw 페이징으로 이 이름의 실제 연혁 행을 찾게 되어 partial(추정)이
+    # 아니라 법령ID 연속성 기반 RENAMED(확정)로 판정 — 더 정밀한 신호.
     info = resolver.resolve("재생에너지 개발ㆍ이용ㆍ보급 촉진법")
-    assert info.status == LawStatus.CURRENT
-    assert info.name_form == "partial"
+    assert info.status == LawStatus.RENAMED
+    assert info.name_form == "rename"
     assert info.current_name and info.current_name.startswith("신에너지")
 
 
@@ -131,7 +133,10 @@ def test_unknown_law(resolver):
 # (법령명, 기대 status, 판별식) — 판별식이 곧 classify의 A/B/C/D 분기를 결정.
 _LIVE_CASES = [
     ("정보통신망법", LawStatus.CURRENT, lambda i: i.name_form == "alias"),                       # A-약칭
-    ("청소년의 성보호에 관한 법률", LawStatus.CURRENT, lambda i: i.name_form == "partial"),        # A-부분명
+    # 0.3.1: 실존했던 옛 법명(2000 제정 → 2009 아동·청소년…로 개명)임을 eflaw 페이징이
+    # 찾아내 partial(추정)이 아닌 RENAMED(법령ID 연속성, 확정)로 판정.
+    ("청소년의 성보호에 관한 법률", LawStatus.RENAMED,
+     lambda i: "아동" in (i.current_name or "")),                                                # A-개명(옛 실명)
     ("기부금품의 모집 및 사용에 관한 법률", LawStatus.RENAMED,
      lambda i: "기부문화" in (i.current_name or "")),                                             # A-개명
     ("저탄소 녹색성장 기본법", LawStatus.REPEALED,
@@ -174,3 +179,33 @@ def test_mapper_finds_design_answer(resolver):
     # DESIGN 정답 §17②→§10 이 상위 후보에 포함(항 정밀화로 '제10조제1항' 형태 가능)
     top3 = [c.article for c in s.candidates]
     assert any(a.startswith("제10조") for a in top3)
+
+
+# --- 0.3.1 회귀: resolve 오판 2건 + resolve_by_id (CHANGELOG [0.3.1]) --------- #
+
+
+def test_short_name_exact_via_paging(resolver):
+    # '상법'은 부분문자열 매칭('…보상법' 56건)에 밀려 UNKNOWN 오판되던 케이스.
+    info = resolver.resolve("상법")
+    assert info.status == LawStatus.CURRENT
+    assert info.current_name == "상법"
+
+
+def test_pending_law_not_repealed(resolver):
+    # 제정 공포·시행일 미도래(2027-03-18) — REPEALED 오판 금지.
+    # 시행일이 지나면 CURRENT 로 자연 전이되므로 둘 다 허용.
+    info = resolver.resolve("은퇴자마을 조성 및 운영에 관한 특별법")
+    assert info.status in (LawStatus.PENDING, LawStatus.CURRENT)
+    assert info.status != LawStatus.REPEALED
+
+
+def test_resolve_by_id_current(resolver):
+    info = resolver.resolve_by_id("001702", "상법")
+    assert info.status == LawStatus.CURRENT
+    assert info.current_name == "상법"
+
+
+def test_resolve_by_id_repealed_with_name(resolver):
+    # 현행에 ID 없음 → 이름 연혁으로 폐지 판정 (국민의료보험법, 1999 폐지).
+    info = resolver.resolve_by_id("000192", "국민의료보험법")
+    assert info.status == LawStatus.REPEALED

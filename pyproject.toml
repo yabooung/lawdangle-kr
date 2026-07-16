@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "lawdangle-kr"
-version = "0.3.0"
+version = "0.3.1"
 description = "Dead cross-reference detector for Korean statutes"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -39,3 +39,5 @@ include = [
 
 [tool.pytest.ini_options]
 testpaths = ["test"]
+# src 레이아웃: 설치본(site-packages)이 아닌 로컬 src 를 테스트한다.
+pythonpath = ["src"]

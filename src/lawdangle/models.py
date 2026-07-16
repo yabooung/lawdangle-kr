@@ -43,6 +43,7 @@ class LawStatus(Enum):
     """
 
     CURRENT = "current"      # 현행
+    PENDING = "pending"      # 시행예정(공포·시행일 미도래 — 현행 검색엔 아직 없음)
     REPEALED = "repealed"    # 폐지(순수 폐지/타법폐지)
     RENAMED = "renamed"      # 개명(법인격 동일, 내용 연속)
     UNKNOWN = "unknown"      # 조회 실패/미확인

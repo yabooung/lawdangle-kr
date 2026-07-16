@@ -33,7 +33,7 @@ import time
 from pathlib import Path
 from typing import Protocol
 
-from .client import LawClient, _as_rows, _exact, _latest, _mst_of, _norm
+from .client import LawClient, _as_rows, _exact, _latest, _mst_of, _norm, _total_count
 from .models import HistoryInfo, LawStatus
 
 # 같은 법령 반복 조회가 많음 → law명 기준 캐시(DESIGN: TTL 24h 권장).
@@ -253,6 +253,7 @@ def parse_repeal_detail(detail: dict, self_name: str) -> tuple[list[str], bool, 
 
 _FIXTURE_STATUS_MAP = {
     "현행": LawStatus.CURRENT,
+    "시행예정": LawStatus.PENDING,
     "폐지": LawStatus.REPEALED,
     "타법폐지": LawStatus.REPEALED,
     "개명": LawStatus.RENAMED,
@@ -314,9 +315,75 @@ class LawGoKrResolver:
         self._cache[cited_law_name] = (time.time(), info)
         return info
 
+    def resolve_by_id(self, law_id: str, cited_law_name: str | None = None) -> HistoryInfo:
+        """법령ID 직조회 resolve — **ID를 알면 이름 검색보다 이걸 써라**.
+
+        이름 검색은 부분문자열 매칭이라 짧은 법명('상법')이 '보상…법' 수십 건에
+        밀려 UNKNOWN 오판할 수 있다(2026-07-16 실측). ID는 정확히 1건.
+
+        제약(라이브 확인): lawSearch 의 ID 파라미터는 target=law(현행)만 유효 —
+        eflaw(연혁)는 ID를 무시하고 전체 목록을 반환한다. 따라서 현행에 없을 때의
+        연혁 판정(시행예정/폐지/개명)은 `cited_law_name` 이 있어야 가능하다.
+        """
+        key = f"id:{law_id}:{cited_law_name or ''}"
+        cached = self._cache.get(key)
+        if cached and (time.time() - cached[0]) < self._cache_ttl:
+            return cached[1]
+
+        info = self._lookup_by_id(law_id, cited_law_name)
+        self._cache[key] = (time.time(), info)
+        return info
+
+    def _lookup_by_id(self, law_id: str, name: str | None) -> HistoryInfo:
+        # 1. 현행에 ID 존재? (현행이면 여기서 끝 — 개명 포함)
+        alive = [
+            r for r in _as_rows(self._search_by_id("law", law_id))
+            if (r.get("현행연혁코드") or "").strip() == "현행"
+        ]
+        if alive:
+            new_name = alive[0].get("법령명한글")
+            renamed = bool(name) and _norm(new_name or "") != _norm(name)
+            return HistoryInfo(
+                status=LawStatus.RENAMED if renamed else LawStatus.CURRENT,
+                current_name=new_name,
+                name_form="rename" if renamed else "exact",
+                raw=alive[0],
+            )
+        # 2. 현행에 없음 → 이름으로 연혁 확인(eflaw 는 ID 검색 불가).
+        if not name:
+            return HistoryInfo(status=LawStatus.UNKNOWN, raw={"query_id": law_id})
+        hist = self._search_exact("eflaw", name)
+        # 같은 이름의 다른 법령(재제정 등)과 섞이지 않게 ID로 좁힌다(행에 ID가 있을 때만).
+        same_id = [r for r in hist if str(r.get("법령ID") or "") == str(law_id)]
+        hist = same_id or hist
+        if not hist:
+            return HistoryInfo(status=LawStatus.UNKNOWN,
+                               raw={"query": name, "query_id": law_id})
+        return self._conclude_history(hist, name, check_alive_by_id=False)
+
+    def _search_exact(self, target: str, name: str, *, max_pages: int = 3) -> list[dict]:
+        """정확일치 행 검색 — display=100 + 최대 max_pages 페이징.
+
+        DRF 검색은 부분문자열 매칭이라 짧은 법명은 정확일치가 뒷페이지로 밀린다
+        ('상법' → '…보상법' 등 56건 뒤). 정확일치를 찾을 때까지 페이지를 넘긴다.
+        """
+        page_size = getattr(self.client, "PAGE_SIZE", 100)
+        found: list[dict] = []
+        for page in range(1, max_pages + 1):
+            try:
+                # 1페이지는 page 인자 없이 — page 미지원 커스텀 client 호환.
+                data = self._search(target, name, page=None if page == 1 else page)
+            except TypeError:
+                break  # 커스텀 client 가 page 미지원 — 1페이지 결과로 종료
+            rows = _as_rows(data)
+            found.extend(_exact(rows, name))
+            if found or not rows or page * page_size >= _total_count(data):
+                break
+        return found
+
     def _lookup(self, name: str) -> HistoryInfo:
         # 1. 현행법령에서 정확매칭?
-        cur = _exact(_as_rows(self._search("law", name)), name)
+        cur = self._search_exact("law", name)
         if cur:
             row = _latest(cur)
             return HistoryInfo(
@@ -326,8 +393,8 @@ class LawGoKrResolver:
                 raw=row,
             )
 
-        # 2. 현행에 없음 → 연혁(시행일법령)에서 폐지/개명 확인.
-        hist = _exact(_as_rows(self._search("eflaw", name)), name)
+        # 2. 현행에 없음 → 연혁(시행일법령)에서 시행예정/폐지/개명 확인.
+        hist = self._search_exact("eflaw", name)
         if not hist:
             # 실명 매칭 실패 → 약칭/부분명 해소 시도(공식 약칭사전 + 부분일치).
             alias = self._resolve_alias(name)
@@ -336,13 +403,18 @@ class LawGoKrResolver:
             # 그래도 없음 → 미확인(오타/별표명 등).
             return HistoryInfo(status=LawStatus.UNKNOWN, raw={"query": name})
 
+        return self._conclude_history(hist, name)
+
+    def _conclude_history(self, hist: list[dict], name: str,
+                          *, check_alive_by_id: bool = True) -> HistoryInfo:
+        """연혁(eflaw) 정확일치 행들 → 개명/시행예정/폐지 판정. (resolve·resolve_by_id 공용)"""
         latest = _latest(hist)
         law_id = latest.get("법령ID")
 
         # 2a. 개명(A) 판정 — 법령ID 연속성.
         #   옛 이름은 현행에 없지만 같은 법령ID가 현행에 '다른 이름'으로 살아있으면
         #   = 법인격 동일·제명변경 = 개명(A). (라이브 확인: lawSearch target=law&ID=)
-        if law_id:
+        if check_alive_by_id and law_id:
             alive = [
                 r for r in _as_rows(self._search_by_id("law", law_id))
                 if (r.get("현행연혁코드") or "").strip() == "현행"
@@ -367,9 +439,22 @@ class LawGoKrResolver:
                         }
                 return info
 
-        # 2b. 법령ID가 현행에 없음 → 진짜 폐지(REPEALED).
         gubun = latest.get("제개정구분명", "")
         is_repeal = any(tok in gubun for tok in _REPEAL_TOKENS)
+
+        # 2b. 시행예정(PENDING) — 제정·개정 공포 후 시행일 미도래.
+        #   현행 검색엔 아직 없어 그대로 두면 폐지로 오판한다(2026-07-16 실측:
+        #   신규 제정법이 REPEALED 판정). 명시 폐지가 아니고 시행예정 행이 있으면
+        #   살아있는(곧 시행될) 법령이다.
+        codes = {(r.get("현행연혁코드") or "").strip() for r in hist}
+        if "시행예정" in codes and not is_repeal:
+            return HistoryInfo(
+                status=LawStatus.PENDING,
+                current_name=latest.get("법령명한글") or name,
+                raw={**latest, "_pending": True},
+            )
+
+        # 2c. 법령ID가 현행에 없고 시행예정도 아님 → 진짜 폐지(REPEALED).
         info = HistoryInfo(
             status=LawStatus.REPEALED,
             current_name=None,
@@ -445,8 +530,8 @@ class LawGoKrResolver:
     # --- 조문/버전 조회 (mapper.py 가 쓰는 빌딩블록) ----------------------- #
 
     def versions(self, name: str) -> list[dict]:
-        """eflaw 연혁 행 — 정확매칭, 시행일자 내림차순."""
-        rows = _exact(_as_rows(self._search("eflaw", name)), name)
+        """eflaw 연혁 행 — 정확매칭(페이징), 시행일자 내림차순."""
+        rows = self._search_exact("eflaw", name)
         rows.sort(key=lambda r: r.get("시행일자", "") or "", reverse=True)
         return rows
 
@@ -459,7 +544,7 @@ class LawGoKrResolver:
 
     def current_articles(self, name: str) -> dict[str, str]:
         """현행 법령명 → 현행 조문 본문 맵. 없으면 빈 dict."""
-        cur = _exact(_as_rows(self._search("law", name)), name)
+        cur = self._search_exact("law", name)
         if not cur:
             return {}
         mst = _mst_of(_latest(cur))
@@ -471,7 +556,7 @@ class LawGoKrResolver:
 
     def current_articles_detailed(self, name: str) -> dict[str, dict]:
         """현행 법령명 → 현행 조문 상세 맵(조본문+항). 없으면 빈 dict."""
-        cur = _exact(_as_rows(self._search("law", name)), name)
+        cur = self._search_exact("law", name)
         if not cur:
             return {}
         mst = _mst_of(_latest(cur))
@@ -493,8 +578,11 @@ class LawGoKrResolver:
                 out.append(nm)
         return out
 
-    def _search(self, target: str, query: str) -> dict:
-        return self.client.search(target, query)
+    def _search(self, target: str, query: str, page: int | None = None) -> dict:
+        if page is None:
+            # page 인자 없이 호출 — page 미지원 커스텀 client(주입 패턴) 호환.
+            return self.client.search(target, query)
+        return self.client.search(target, query, page=page)
 
     def _search_by_id(self, target: str, law_id: str) -> dict:
         """법령ID로 검색 — 현행 생존 여부/현행명 확인용(개명 판정)."""
