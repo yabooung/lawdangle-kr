@@ -71,6 +71,7 @@ def classify(citation: Citation, history: HistoryInfo) -> Result:
         cause = {
             "alias": "약칭",
             "partial": "부분명(앞부분 생략)",
+            "notation": "표기차('의' 유무)",
         }.get(history.name_form, "표기차/개명")
         return Result(
             citation=citation,

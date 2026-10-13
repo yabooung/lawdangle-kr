@@ -33,7 +33,7 @@ import time
 from pathlib import Path
 from typing import Protocol
 
-from .client import LawClient, _as_rows, _exact, _latest, _mst_of, _norm, _total_count
+from .client import LawClient, _as_rows, _exact, _latest, _mst_of, _norm, _norm_ui, _total_count
 from .models import HistoryInfo, LawStatus
 
 # 같은 법령 반복 조회가 많음 → law명 기준 캐시(DESIGN: TTL 24h 권장).
@@ -396,6 +396,10 @@ class LawGoKrResolver:
         # 2. 현행에 없음 → 연혁(시행일법령)에서 시행예정/폐지/개명 확인.
         hist = self._search_exact("eflaw", name)
         if not hist:
+            # 옛 공식명도 아님 → '의' 같은 표기차로 현행 법령 하나에 모이면 그 법령(name_form=notation).
+            notation = self._notation_current(name)
+            if notation:
+                return notation
             # 실명 매칭 실패 → 약칭/부분명 해소 시도(공식 약칭사전 + 부분일치).
             alias = self._resolve_alias(name)
             if alias:
@@ -509,6 +513,32 @@ class LawGoKrResolver:
             return None
         cands.sort(key=lambda r: len(r.get("법령명한글", "")))  # 가장 구체(짧은) 우선
         return cands[0].get("법령명한글")
+
+    def _notation_current(self, name: str) -> HistoryInfo | None:
+        """표기차('의' 유무) → 현행 풀네임. 현행 행 중 `_norm_ui` 가 같은 **서로 다른 이름이 정확히 하나**일 때만.
+
+        DRF 검색은 '의'가 빠진 이름으로도 해당 법령을 돌려주지만(2026-10-13 라이브 확인:
+        "공공기관 운영에 관한 법률" → 「공공기관의 운영에 관한 법률」) 정확일치에서 떨어져 UNKNOWN 이 됐다.
+        옛 공식명이면 연혁(eflaw) 정확일치로 먼저 잡혀 개명(RENAMED) 경로를 타므로 여기 오지 않는다.
+        """
+        key = _norm_ui(name)
+        if not key:
+            return None
+        rows = _as_rows(self._search("law", name))
+        names = {
+            r.get("법령명한글") for r in rows
+            if (r.get("현행연혁코드") or "").strip() == "현행"
+            and r.get("법령명한글") and _norm_ui(r["법령명한글"]) == key
+        }
+        if len(names) != 1:
+            return None  # 없음 또는 '의'만 다른 현행 법령이 둘 이상(동음 충돌) → 판단 보류
+        canonical = names.pop()
+        return HistoryInfo(
+            status=LawStatus.CURRENT,
+            current_name=canonical,
+            name_form="notation",
+            raw={"query": name, "resolved": canonical},
+        )
 
     def _resolve_alias(self, name: str) -> HistoryInfo | None:
         """공식 약칭 → 풀네임, 없으면 부분명 → 풀네임. 현행이면 CURRENT 반환."""

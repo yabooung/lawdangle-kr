@@ -70,7 +70,7 @@ class HistoryInfo:
     status: LawStatus
     current_name: str | None = None         # 개명/약칭 해소 시 현행 풀네임
     name_form: str = "exact"
-    # 인용명이 현행명과 어떻게 연결됐나: exact|alias(공식약칭)|partial(부분명)|rename
+    # 인용명이 현행명과 어떻게 연결됐나: exact|alias(공식약칭)|partial(부분명)|notation(표기차 '의')|rename
     alive_articles: set = field(default_factory=set)
     # RENAMED일 때 현행본의 '살아있는 조(條) 키' 집합(예: {"제5조","제17조의2"}).
     # 인용 조문이 이 안에 있으면 깨끗한 개명(A), 없으면 전부개정·재번호(B) 신호.

@@ -34,6 +34,16 @@ def _norm(name: str) -> str:
     return name.replace("ㆍ", "").replace("·", "").replace(" ", "").strip()
 
 
+# 어절 끝 관형격 '의'. "공공기관 운영에 관한 법률" ↔ 현행 「공공기관의 운영에 관한 법률」 같은 표기차.
+# 어절 끝만 지운다(의료·의약품 앞머리 '의'는 그대로). 공백을 지우기 전에 적용해야 어절 경계가 보인다.
+_UI_PARTICLE_RE = re.compile(r"의(?=\s)")
+
+
+def _norm_ui(name: str) -> str:
+    """`_norm` + 어절 끝 '의' 제거 — 표기차 해소용 보조 키(정확일치가 실패했을 때만, 대상 1개일 때만 쓴다)."""
+    return _norm(_UI_PARTICLE_RE.sub("", name or ""))
+
+
 def _as_rows(search_json: dict) -> list[dict]:
     """lawSearch.do 응답 → law 행 리스트. (1건이면 dict, 0건이면 키 없음)"""
     ls = search_json.get("LawSearch", search_json)
